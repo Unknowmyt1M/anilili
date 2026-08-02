@@ -66,3 +66,22 @@ class PlayerGestureControlsTest {
         assertEquals(null, playerGestureZone(Float.NaN, 1_000f, dragGestures = true))
     }
 }
+
+/**
+ * Two TV users independently reported the control row appearing but ignoring the remote, with OK
+ * firing "previous episode" — the row's leading button. Both noted it behaved only while the
+ * "Next Episode" action was up, which is the tell: that action already exists before the row
+ * opens, so its focus reclaim never re-fires. The "+Ns" button appears *with* the row, so its
+ * reclaim did fire, one frame after the row had taken focus.
+ */
+class SkipActionFocusTest {
+    @Test
+    fun openingTheControlRowDoesNotPullFocusBackToThePlayer() {
+        assertEquals(false, reclaimsPlayerFocusOnSkipAction(controlsVisible = true))
+    }
+
+    @Test
+    fun timedActionOverBarePictureStillReclaimsTheRemote() {
+        assertEquals(true, reclaimsPlayerFocusOnSkipAction(controlsVisible = false))
+    }
+}

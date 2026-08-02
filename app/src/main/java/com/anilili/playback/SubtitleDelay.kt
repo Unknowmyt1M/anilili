@@ -2,6 +2,8 @@ package com.anilili.playback
 
 import android.content.Context
 import android.os.Looper
+import androidx.media3.common.text.Cue
+import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ForwardingRenderer
@@ -86,6 +88,45 @@ internal class SubtitleDelayRenderer(renderer: Renderer) : ForwardingRenderer(re
     }
 }
 
+/**
+ * Drops cues that repeat a line already on screen at the same moment.
+ *
+ * Reported as "double subtitles": the same sentence drawn twice, half a line apart, because two
+ * identical cues were active together and neither carries an explicit line position, so the view
+ * stacks them. It comes from the subtitle file, not from track selection — one text renderer is
+ * showing one track. A cue spanning an HLS segment boundary can be emitted by the segment on each
+ * side of it, and ASS-to-VTT conversions routinely duplicate dialogue that carried a second style.
+ *
+ * Identical text shown twice at once is never intentional, so keeping the first is always right.
+ * Bitmap cues (no [Cue.text]) are never compared and always pass through.
+ */
+internal fun dedupeSimultaneousCues(cues: List<Cue>): List<Cue> {
+    if (cues.size < 2) return cues
+    val seen = HashSet<String>(cues.size)
+    val kept = ArrayList<Cue>(cues.size)
+    for (cue in cues) {
+        val text = cue.text?.toString()?.trim()
+        if (text.isNullOrEmpty() || seen.add(text)) kept += cue
+    }
+    return if (kept.size == cues.size) cues else kept
+}
+
+@UnstableApi
+private class DedupingTextOutput(private val delegate: TextOutput) : TextOutput {
+    override fun onCues(cueGroup: CueGroup) {
+        val cues = dedupeSimultaneousCues(cueGroup.cues)
+        delegate.onCues(
+            if (cues === cueGroup.cues) cueGroup else CueGroup(cues, cueGroup.presentationTimeUs),
+        )
+    }
+
+    @Deprecated("Media3 keeps calling this alongside onCues(CueGroup); both reach the view.")
+    override fun onCues(cues: List<Cue>) {
+        @Suppress("DEPRECATION")
+        delegate.onCues(dedupeSimultaneousCues(cues))
+    }
+}
+
 /** [DefaultRenderersFactory] whose text renderers honour [SubtitleDelay]. */
 @UnstableApi
 class SubtitleDelayRenderersFactory(context: Context) : DefaultRenderersFactory(context) {
@@ -97,7 +138,13 @@ class SubtitleDelayRenderersFactory(context: Context) : DefaultRenderersFactory(
         out: ArrayList<Renderer>,
     ) {
         val first = out.size
-        super.buildTextRenderers(context, output, outputLooper, extensionRendererMode, out)
+        super.buildTextRenderers(
+            context,
+            DedupingTextOutput(output),
+            outputLooper,
+            extensionRendererMode,
+            out,
+        )
         for (i in first until out.size) out[i] = SubtitleDelayRenderer(out[i])
     }
 }

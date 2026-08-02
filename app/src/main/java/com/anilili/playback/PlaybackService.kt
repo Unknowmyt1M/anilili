@@ -368,6 +368,35 @@ class PlaybackService : MediaSessionService() {
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession = session
 
+    /**
+     * Stands the service down when it was foreground-started with nothing to play.
+     *
+     * Android wakes the whole process just to hand this service a `startForegroundService`, and
+     * then requires a `startForeground` within a few seconds or it kills the app with
+     * [android.app.RemoteServiceException.ForegroundServiceDidNotStartInTimeException]. Media3 only
+     * posts its notification once a player is really playing, and a stray media button — a headset
+     * or car stereo reconnecting is the usual source — is one [MediaSession.Callback.onMediaButtonEvent]
+     * deliberately ignores while the app is in the background. So nothing plays, nothing posts a
+     * notification, and the process is killed: three crash reports on 0.1.54 all show a cold start
+     * reaching `MiruroApp.onCreate` with no activity and no playback, then the fatal.
+     *
+     * Ending the service cancels that timer, which is the honest response — there is nothing here
+     * to be in the foreground for. Playback started from the app binds the service instead of
+     * starting it, so it never takes this path; a notification button does, and by then the player
+     * holds the episode it belongs to.
+     */
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val result = super.onStartCommand(intent, flags, startId)
+        if ((activePlayer?.mediaItemCount ?: 0) == 0) {
+            DiagnosticsLog.event(
+                "PlaybackService foreground start with nothing queued; stopping " +
+                    "action=${intent?.action ?: "none"}",
+            )
+            stopSelf()
+        }
+        return result
+    }
+
     override fun onTaskRemoved(rootIntent: Intent?) {
         val active = activePlayer
         DiagnosticsLog.event("PlaybackService.onTaskRemoved playing=${active?.playWhenReady == true}")

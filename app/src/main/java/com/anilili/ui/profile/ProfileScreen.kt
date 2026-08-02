@@ -210,7 +210,11 @@ fun ProfileScreen(
                 authorizeUrl = remember { AuthManager.authorizeUrl() },
                 isRedirect = AuthManager::isRedirect,
                 extractResult = AuthManager::extractToken,
-                onResult = { loginService = null; vm.onLoggedIn(it) },
+                onResult = {
+                    loginService = null
+                    vm.onLoggedIn(it)
+                    confirmSignedIn(context, "AniList")
+                },
                 onCancel = { loginService = null },
             )
             return

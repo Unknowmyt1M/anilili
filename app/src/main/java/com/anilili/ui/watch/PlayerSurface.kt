@@ -1270,12 +1270,12 @@ fun PlayerSurface(
                 }
             else -> null
         }
-        LaunchedEffect(action?.first, playerView, device.isTv, focusPlayerOnStart) {
+        LaunchedEffect(action?.first, playerView, device.isTv, focusPlayerOnStart, controlsVisible) {
             DiagnosticsLog.event(
                 "PlayerSurface skip action=${action?.first ?: "none"} positionMs=$positionMs " +
                     "status=${skipTimingStatus.name.lowercase()}",
             )
-            if (device.isTv && focusPlayerOnStart) {
+            if (device.isTv && focusPlayerOnStart && reclaimsPlayerFocusOnSkipAction(controlsVisible)) {
                 // Compose may focus a newly inserted skip/next action before PlayerView can
                 // reclaim focus. Return remote input to the player once this frame settles.
                 delay(32)
@@ -1326,6 +1326,17 @@ private fun togglePlayerPlayback(controller: MediaController): Boolean {
 }
 
 internal fun playerToggleWillPlay(playWhenReady: Boolean): Boolean = !playWhenReady
+
+/**
+ * Whether a newly appeared skip action should pull remote focus back to the player surface.
+ *
+ * It should only when the control row is hidden. A timed action (Skip Intro, Next Episode) can
+ * appear over bare picture and steal the remote, which is what this reclaim exists to undo — but
+ * the fixed "+Ns" button appears *because* the row opened, so reclaiming there fights the row for
+ * focus and wins by a frame. That left the controls on screen but dead to the remote, with the
+ * first D-pad press landing on the row's leading button, previous episode.
+ */
+internal fun reclaimsPlayerFocusOnSkipAction(controlsVisible: Boolean): Boolean = !controlsVisible
 
 /** Heights offered by the loaded tracks plus any alternate per-quality source streams. */
 private fun availableVideoHeights(

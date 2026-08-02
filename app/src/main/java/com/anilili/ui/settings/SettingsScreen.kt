@@ -103,6 +103,7 @@ import com.anilili.ui.components.CaptionAppearanceDialog
 import com.anilili.ui.components.LocalAppChromeBottomInset
 import com.anilili.ui.components.ScrollAwareTopBar
 import com.anilili.ui.profile.AniListProfile
+import com.anilili.ui.profile.confirmSignedIn
 import com.anilili.ui.profile.LoginWebView
 import com.anilili.ui.profile.MalImportProgress
 import com.anilili.ui.profile.MalImportStage
@@ -326,7 +327,11 @@ fun SettingsScreen(
                 authorizeUrl = remember(loginService) { AuthManager.authorizeUrl() },
                 isRedirect = AuthManager::isRedirect,
                 extractResult = AuthManager::extractToken,
-                onResult = { loginService = null; vm.onLoggedIn(it) },
+                onResult = {
+                    loginService = null
+                    vm.onLoggedIn(it)
+                    confirmSignedIn(context, "AniList")
+                },
                 onCancel = { loginService = null },
             )
             return

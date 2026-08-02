@@ -704,6 +704,19 @@ internal enum class LoginLoadProblem(
     ),
 }
 
+/**
+ * Confirms a completed sign-in, because a successful one can be indistinguishable from a failure.
+ *
+ * AniList skips its consent page when the account is already signed in and has approved the app
+ * before, so re-authorising redirects straight back and the login screen closes about as fast as it
+ * opened. A viewer reported that as "it buffers and returns me to settings", while saying in the
+ * same breath that their list was syncing — it had worked every time; nothing ever said so.
+ */
+internal fun confirmSignedIn(context: android.content.Context, service: String) {
+    android.widget.Toast.makeText(context, "$service connected", android.widget.Toast.LENGTH_SHORT)
+        .show()
+}
+
 private fun String?.oauthHost(): String =
     this?.let { value -> runCatching { android.net.Uri.parse(value).host }.getOrNull() }
         ?: "none"

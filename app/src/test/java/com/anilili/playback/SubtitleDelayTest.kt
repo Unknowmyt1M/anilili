@@ -1,10 +1,12 @@
 package com.anilili.playback
 
 import androidx.media3.common.Format
+import androidx.media3.common.text.Cue
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.NoSampleRenderer
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Before
 import org.junit.Test
 
@@ -112,5 +114,49 @@ class SubtitleDelayTest {
             SubtitleDelaySeed(delayMs = 4_000L, automatic = true),
             subtitleDelaySeed(providerDelayMs = 4_000L, persistentDelayMs = null),
         )
+    }
+}
+
+/**
+ * Two identical cues alive at the same moment are what "double subtitles" looks like: the view
+ * stacks them half a line apart. Only exact repeats collapse — everything else is a real second
+ * line and must survive.
+ */
+@UnstableApi
+class SimultaneousCueDedupeTest {
+    private fun cue(text: String) = Cue.Builder().setText(text).build()
+
+    @Test
+    fun repeatedLineIsShownOnce() {
+        val cues = listOf(cue("Just the seven of you."), cue("Just the seven of you."))
+        assertEquals(listOf("Just the seven of you."), dedupeSimultaneousCues(cues).map { it.text })
+    }
+
+    @Test
+    fun repeatWithSurroundingWhitespaceStillCollapses() {
+        val cues = listOf(cue("Line"), cue("  Line \n"))
+        assertEquals(1, dedupeSimultaneousCues(cues).size)
+    }
+
+    @Test
+    fun genuinelyDifferentLinesBothSurvive() {
+        val cues = listOf(cue("Top line"), cue("Bottom line"))
+        assertEquals(cues.size, dedupeSimultaneousCues(cues).size)
+    }
+
+    @Test
+    fun untouchedListKeepsItsIdentitySoNoCueGroupIsAllocated() {
+        val cues = listOf(cue("Only line"), cue("Other line"))
+        assertSame(cues, dedupeSimultaneousCues(cues))
+    }
+
+    /**
+     * Textless cues — bitmap subtitles, which a JVM test cannot build — take the same branch as
+     * these blank ones: no text to compare, so they are never treated as repeats of each other.
+     */
+    @Test
+    fun cuesWithNoTextToCompareAllSurvive() {
+        val cues = listOf(cue(""), cue("   "))
+        assertEquals(cues.size, dedupeSimultaneousCues(cues).size)
     }
 }
