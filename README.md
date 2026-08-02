@@ -218,7 +218,7 @@ on every release so they never disagree:
 
    ```bash
    scripts/.venv/Scripts/python scripts/nostr_update.py publish \
-     --version 0.1.56 \
+     --version 0.1.57 \
      --apk-url "https://github.com/kompoti121/Anilili/releases/latest/download/Anilili.apk" \
      --tv-apk-url "https://github.com/kompoti121/Anilili/releases/latest/download/Anilili_tv.apk" \
      --changelog "What changed in this release" \
