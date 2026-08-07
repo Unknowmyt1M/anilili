@@ -70,6 +70,7 @@ data class WatchData(
     /** Track languages discovered per server/audio pair, filled in as sources are validated. */
     val capabilities: Map<Pair<String, Category>, SourceCapabilities> = emptyMap(),
     val notice: String? = null,
+    val fullMedia: com.anilili.data.model.Media? = null,
 ) {
     val current: EpisodeItem get() = episodes[currentIndex]
 
@@ -148,6 +149,7 @@ class WatchViewModel : ViewModel() {
     private var popularity: Int? = null
     private var description: String? = null
     private var totalEpisodes: Int? = null
+    private var fullMedia: com.anilili.data.model.Media? = null
     private val locallyWatchedEpisodes = mutableSetOf<Int>()
     private val scheduledRemoteProgressEpisodes = mutableSetOf<Int>()
 
@@ -345,6 +347,7 @@ class WatchViewModel : ViewModel() {
                     }
                 }
                 repo.animeInfo(id)?.let { info ->
+                    fullMedia = info
                     seriesTitle = info.title.preferred
                     artworkUrl = info.coverImage.best
                     seriesFormat = info.format
@@ -699,6 +702,7 @@ class WatchViewModel : ViewModel() {
                 isLoadingMoreSources = !mergedIncludesAnivexa,
                 isRetryingMiruro = miruroRecoveryPending,
                 notice = fallbackNotice,
+                fullMedia = fullMedia,
             ),
         )
         recordHistory(number, resolved.provider)

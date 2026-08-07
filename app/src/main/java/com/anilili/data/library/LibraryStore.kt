@@ -30,6 +30,8 @@ object LibraryStore {
     private const val KEY_WATCHLIST = "watchlist"
     private const val KEY_REMOTE_STATUSES = "remote_statuses"
     private const val KEY_DISMISSED_REMOTE_HISTORY = "dismissed_remote_history"
+    private const val KEY_LIKES = "likes_media"
+    private const val KEY_DISLIKES = "dislikes_media"
     private const val MAX_HISTORY = 100
     private const val REMOTE_REFRESH_INTERVAL_MS = 30_000L
 
@@ -51,6 +53,12 @@ object LibraryStore {
     val remoteStatuses = _remoteStatuses.asStateFlow()
     private var dismissedRemoteHistory = emptySet<Int>()
 
+    private val _likes = MutableStateFlow<Set<Int>>(emptySet())
+    val likes = _likes.asStateFlow()
+
+    private val _dislikes = MutableStateFlow<Set<Int>>(emptySet())
+    val dislikes = _dislikes.asStateFlow()
+
     fun init(context: Context) {
         appContext = context.applicationContext
         prefs = appContext.getSharedPreferences("miruro_library", Context.MODE_PRIVATE)
@@ -70,6 +78,60 @@ object LibraryStore {
             .orEmpty()
             .mapNotNull(String::toIntOrNull)
             .toSet()
+
+        _likes.value = prefs.getStringSet(KEY_LIKES, emptySet())
+            .orEmpty()
+            .mapNotNull(String::toIntOrNull)
+            .toSet()
+        _dislikes.value = prefs.getStringSet(KEY_DISLIKES, emptySet())
+            .orEmpty()
+            .mapNotNull(String::toIntOrNull)
+            .toSet()
+    }
+
+    // ---- Likes & Dislikes ----
+
+    fun isLiked(anilistId: Int): Boolean = _likes.value.contains(anilistId)
+    fun isDisliked(anilistId: Int): Boolean = _dislikes.value.contains(anilistId)
+
+    fun toggleLike(anilistId: Int) {
+        val currentLikes = _likes.value
+        val currentDislikes = _dislikes.value
+        val newLikes: Set<Int>
+        val newDislikes: Set<Int>
+        if (currentLikes.contains(anilistId)) {
+            newLikes = currentLikes - anilistId
+            newDislikes = currentDislikes
+        } else {
+            newLikes = currentLikes + anilistId
+            newDislikes = currentDislikes - anilistId
+        }
+        _likes.value = newLikes
+        _dislikes.value = newDislikes
+        prefs.edit()
+            .putStringSet(KEY_LIKES, newLikes.map(Int::toString).toSet())
+            .putStringSet(KEY_DISLIKES, newDislikes.map(Int::toString).toSet())
+            .apply()
+    }
+
+    fun toggleDislike(anilistId: Int) {
+        val currentLikes = _likes.value
+        val currentDislikes = _dislikes.value
+        val newLikes: Set<Int>
+        val newDislikes: Set<Int>
+        if (currentDislikes.contains(anilistId)) {
+            newDislikes = currentDislikes - anilistId
+            newLikes = currentLikes
+        } else {
+            newDislikes = currentDislikes + anilistId
+            newLikes = currentLikes - anilistId
+        }
+        _likes.value = newLikes
+        _dislikes.value = newDislikes
+        prefs.edit()
+            .putStringSet(KEY_LIKES, newLikes.map(Int::toString).toSet())
+            .putStringSet(KEY_DISLIKES, newDislikes.map(Int::toString).toSet())
+            .apply()
     }
 
     // ---- history ----

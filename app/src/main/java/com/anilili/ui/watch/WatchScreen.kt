@@ -54,12 +54,21 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Fullscreen
-import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.FullscreenExit
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.RadioButtonChecked
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.ThumbDown
+import androidx.compose.material.icons.filled.ThumbUp
+import androidx.compose.material.icons.filled.Whatshot
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -1076,6 +1085,19 @@ private fun WatchEpisodeSummary(
         }
     }
 
+    var showDescriptionSheet by remember { mutableStateOf(false) }
+
+    if (showDescriptionSheet) {
+        DescriptionBottomSheet(
+            data = data,
+            canDownload = canDownload,
+            downloadPreparing = downloadPreparing,
+            episodeDownload = episodeDownload,
+            onDownload = onDownload,
+            onDismiss = { showDescriptionSheet = false },
+        )
+    }
+
     Column(modifier = modifier.fillMaxWidth().focusGroup()) {
         Text(
             text = data.current.title?.takeIf { it.isNotBlank() }
@@ -1084,6 +1106,7 @@ private fun WatchEpisodeSummary(
             fontWeight = FontWeight.Black,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.clickable { showDescriptionSheet = true },
         )
         Text(
             text = buildList {
@@ -1093,6 +1116,17 @@ private fun WatchEpisodeSummary(
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 3.dp),
+        )
+
+        // Redesign Watch Action Bar (Like, Dislike, Share, Download)
+        WatchActionBar(
+            anilistId = data.anilistId,
+            seriesTitle = data.seriesTitle,
+            episodeNumber = data.current.displayNumber,
+            canDownload = canDownload,
+            downloadPreparing = downloadPreparing,
+            episodeDownload = episodeDownload,
+            onDownload = onDownload,
         )
 
         if (description.isNotBlank()) {
@@ -1651,6 +1685,8 @@ private fun MobileWatchDetails(
     } else {
         blocks.getOrNull(blockIndex)?.episodes.orEmpty()
     }
+    var selectedTab by rememberSaveable { mutableIntStateOf(0) } // 0 = Episodes, 1 = Recommendations
+
     LazyColumn(modifier = modifier) {
         item {
             Column(modifier = Modifier.fillMaxWidth()) {
@@ -1666,8 +1702,6 @@ private fun MobileWatchDetails(
                     onDownload = onDownload,
                     modifier = Modifier.padding(start = pad, end = pad, top = 16.dp, bottom = 4.dp),
                 )
-                // Previous/Next pills removed: the player transport and the episode list below
-                // already cover episode navigation.
             }
             SourceSelectors(
                 data = data,
@@ -1686,76 +1720,124 @@ private fun MobileWatchDetails(
                 )
             }
             BulkDownloadStatus(modifier = Modifier.padding(horizontal = pad))
+
+            // Redesign Tab Switcher (Episodes | Recommendations)
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = pad, vertical = 14.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = pad, vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(28.dp, Alignment.Start),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Episodes", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text(
-                    "  ${data.episodes.size}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-        if (data.episodes.size > EPISODE_BROWSER_MIN_EPISODES) {
-            item {
-                EpisodeBrowserBar(
-                    blocks = blocks,
-                    selectedBlockIndex = blockIndex,
-                    onSelectBlock = { chosenBlockIndex = it },
-                    query = episodeQuery,
-                    onQueryChange = { episodeQuery = it },
-                    layout = episodeLayout,
-                    onToggleLayout = { SettingsStore.setEpisodeLayout(episodeLayout.toggled()) },
-                    modifier = Modifier.padding(horizontal = pad).padding(bottom = 6.dp),
-                )
-            }
-        }
-        when {
-            shownEpisodes.isNotEmpty() && episodeLayout == EpisodeLayout.GRID -> items(
-                shownEpisodes.chunked(device.episodeColumns),
-                key = { row -> row.first().pipeId },
-            ) { row ->
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = pad, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                Column(
+                    modifier = Modifier.clickable { selectedTab = 0 },
+                    horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    row.forEach { episode ->
-                        val index = indexByPipeId[episode.pipeId] ?: -1
-                        EpisodeNumberChip(
-                            episode = episode,
-                            selected = index == data.currentIndex,
-                            watchedFraction = episodeWatchFraction(resume, episode.number),
-                            modifier = Modifier.weight(1f),
-                            onClick = { if (index >= 0) onSelectEpisode(index) },
+                    Text(
+                        text = "Episodes (${data.episodes.size})",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Medium,
+                        color = if (selectedTab == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (selectedTab == 0) {
+                        Box(
+                            Modifier
+                                .padding(top = 4.dp)
+                                .width(48.dp)
+                                .height(3.dp)
+                                .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(2.dp))
                         )
                     }
-                    repeat(device.episodeColumns - row.size) { Spacer(Modifier.weight(1f)) }
+                }
+                Column(
+                    modifier = Modifier.clickable { selectedTab = 1 },
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        text = "Recommendations",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Medium,
+                        color = if (selectedTab == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (selectedTab == 1) {
+                        Box(
+                            Modifier
+                                .padding(top = 4.dp)
+                                .width(70.dp)
+                                .height(3.dp)
+                                .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(2.dp))
+                        )
+                    }
                 }
             }
-            shownEpisodes.isNotEmpty() -> items(shownEpisodes, key = EpisodeItem::pipeId) { episode ->
-                val index = indexByPipeId[episode.pipeId] ?: -1
-                MobileEpisodeRow(
-                    episode = episode,
-                    fallbackImage = data.artworkUrl,
-                    blurred = blurEpisodeImages,
-                    onBlurredChange = SettingsStore::setBlurEpisodeImages,
-                    selected = index == data.currentIndex,
-                    watchedFraction = episodeWatchFraction(resume, episode.number),
-                    downloadState = downloadBadges[
-                        EpisodeDownloads.idFor(data.anilistId, data.category.api, episode.displayNumber)
-                    ],
-                    onClick = { if (index >= 0) onSelectEpisode(index) },
+        }
+        if (selectedTab == 1) {
+            item {
+                RecommendationsList(
+                    media = data.fullMedia,
+                    onOpenAnime = onOpenAnime,
                 )
             }
-            episodeQuery.isNotBlank() -> item {
-                Text(
-                    text = "No episode matches “$episodeQuery”.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = pad, vertical = 12.dp),
-                )
+        } else {
+            if (data.episodes.size > EPISODE_BROWSER_MIN_EPISODES) {
+                item {
+                    EpisodeBrowserBar(
+                        blocks = blocks,
+                        selectedBlockIndex = blockIndex,
+                        onSelectBlock = { chosenBlockIndex = it },
+                        query = episodeQuery,
+                        onQueryChange = { episodeQuery = it },
+                        layout = episodeLayout,
+                        onToggleLayout = { SettingsStore.setEpisodeLayout(episodeLayout.toggled()) },
+                        modifier = Modifier.padding(horizontal = pad).padding(bottom = 6.dp),
+                    )
+                }
+            }
+            when {
+                shownEpisodes.isNotEmpty() && episodeLayout == EpisodeLayout.GRID -> items(
+                    shownEpisodes.chunked(device.episodeColumns),
+                    key = { row -> row.first().pipeId },
+                ) { row ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = pad, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        row.forEach { episode ->
+                            val index = indexByPipeId[episode.pipeId] ?: -1
+                            EpisodeNumberChip(
+                                episode = episode,
+                                selected = index == data.currentIndex,
+                                watchedFraction = episodeWatchFraction(resume, episode.number),
+                                modifier = Modifier.weight(1f),
+                                onClick = { if (index >= 0) onSelectEpisode(index) },
+                            )
+                        }
+                        repeat(device.episodeColumns - row.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                }
+                shownEpisodes.isNotEmpty() -> items(shownEpisodes, key = EpisodeItem::pipeId) { episode ->
+                    val index = indexByPipeId[episode.pipeId] ?: -1
+                    MobileEpisodeRow(
+                        episode = episode,
+                        fallbackImage = data.artworkUrl,
+                        blurred = blurEpisodeImages,
+                        onBlurredChange = SettingsStore::setBlurEpisodeImages,
+                        selected = index == data.currentIndex,
+                        watchedFraction = episodeWatchFraction(resume, episode.number),
+                        downloadState = downloadBadges[
+                            EpisodeDownloads.idFor(data.anilistId, data.category.api, episode.displayNumber)
+                        ],
+                        onClick = { if (index >= 0) onSelectEpisode(index) },
+                    )
+                }
+                episodeQuery.isNotBlank() -> item {
+                    Text(
+                        text = "No episode matches “$episodeQuery”.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = pad, vertical = 12.dp),
+                    )
+                }
             }
         }
         item { Spacer(Modifier.height(28.dp)) }
@@ -2677,3 +2759,380 @@ private fun BulkDownloadStatus(modifier: Modifier = Modifier) {
         }
     }
 }
+
+// ---- Redesign UI Components (anilili.png) ----
+
+@Composable
+private fun WatchActionBar(
+    anilistId: Int,
+    seriesTitle: String,
+    episodeNumber: String,
+    canDownload: Boolean,
+    downloadPreparing: Boolean,
+    episodeDownload: EpisodeDownload?,
+    onDownload: () -> Unit,
+) {
+    val context = LocalContext.current
+    val likes by LibraryStore.likes.collectAsState()
+    val dislikes by LibraryStore.dislikes.collectAsState()
+    val isLiked = anilistId in likes
+    val isDisliked = anilistId in dislikes
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // Like Button
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier
+                .clip(RoundedCornerShape(12.dp))
+                .clickable { LibraryStore.toggleLike(anilistId) }
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Default.ThumbUp,
+                contentDescription = "Like",
+                tint = if (isLiked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(24.dp),
+            )
+            Text(
+                "Like",
+                style = MaterialTheme.typography.labelSmall,
+                color = if (isLiked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
+
+        // Dislike Button
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier
+                .clip(RoundedCornerShape(12.dp))
+                .clickable { LibraryStore.toggleDislike(anilistId) }
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Default.ThumbDown,
+                contentDescription = "Dislike",
+                tint = if (isDisliked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(24.dp),
+            )
+            Text(
+                "Dislike",
+                style = MaterialTheme.typography.labelSmall,
+                color = if (isDisliked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
+
+        // Share Button
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier
+                .clip(RoundedCornerShape(12.dp))
+                .clickable {
+                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_SUBJECT, seriesTitle)
+                        putExtra(
+                            Intent.EXTRA_TEXT,
+                            "Watching $seriesTitle - Episode $episodeNumber on Anilili!\nhttps://anilist.co/anime/$anilistId",
+                        )
+                    }
+                    context.startActivity(Intent.createChooser(shareIntent, "Share Anime"))
+                }
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Default.Share,
+                contentDescription = "Share",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(24.dp),
+            )
+            Text(
+                "Share",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
+
+        // Download Button
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier
+                .clip(RoundedCornerShape(12.dp))
+                .clickable(enabled = canDownload && !downloadPreparing, onClick = onDownload)
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+        ) {
+            when {
+                downloadPreparing || episodeDownload?.state == EpisodeDownloadState.DOWNLOADING -> {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.dp,
+                    )
+                }
+                episodeDownload?.state == EpisodeDownloadState.COMPLETED -> {
+                    Icon(
+                        Icons.Default.CheckCircle,
+                        contentDescription = "Downloaded",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+                else -> {
+                    Icon(
+                        Icons.Default.Download,
+                        contentDescription = "Download",
+                        tint = if (canDownload) MaterialTheme.colorScheme.onSurfaceVariant else Color.Gray,
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+            }
+            Text(
+                "Download",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun RecommendationsList(
+    media: com.anilili.data.model.Media?,
+    onOpenAnime: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val recommendations = remember(media) {
+        media?.relations?.edges?.mapNotNull { it.node } ?: emptyList()
+    }
+
+    if (recommendations.isEmpty()) {
+        Box(
+            modifier = modifier
+                .fillMaxWidth()
+                .padding(32.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                "No recommendations available for this series.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        return
+    }
+
+    Column(modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+        recommendations.forEach { rec ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 6.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    .clickable { onOpenAnime() }
+                    .padding(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                AsyncImage(
+                    model = rec.coverImage.best,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(64.dp, 88.dp)
+                        .clip(RoundedCornerShape(8.dp)),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                )
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(start = 12.dp),
+                ) {
+                    Text(
+                        text = rec.title.preferred,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = "${rec.format ?: "TV"} • Ep ${rec.episodes ?: "?"}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(top = 6.dp),
+                    ) {
+                        rec.averageScore?.let { score ->
+                            Icon(
+                                Icons.Default.Star,
+                                contentDescription = null,
+                                tint = Color(0xFFFFB300),
+                                modifier = Modifier.size(14.dp),
+                            )
+                            Text(
+                                text = " ${score / 10f} ",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                            )
+                        }
+                        rec.popularity?.let { pop ->
+                            Text(
+                                text = "  🔥 ${compactPopularity(pop)}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+                Icon(
+                    Icons.Default.MoreVert,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(end = 4.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TagChip(text: String) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+    ) {
+        Text(text, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun MetadataRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun DescriptionBottomSheet(
+    data: WatchData,
+    canDownload: Boolean,
+    downloadPreparing: Boolean,
+    episodeDownload: EpisodeDownload?,
+    onDownload: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 8.dp)
+                .verticalScroll(rememberScrollState()),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = data.seriesTitle,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = "Episode ${data.current.displayNumber}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Default.Close, contentDescription = "Close")
+                }
+            }
+
+            WatchActionBar(
+                anilistId = data.anilistId,
+                seriesTitle = data.seriesTitle,
+                episodeNumber = data.current.displayNumber,
+                canDownload = canDownload,
+                downloadPreparing = downloadPreparing,
+                episodeDownload = episodeDownload,
+                onDownload = onDownload,
+            )
+
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(vertical = 8.dp),
+            ) {
+                data.fullMedia?.seasonYear?.let { year -> TagChip(text = "$year") }
+                data.fullMedia?.genres.orEmpty().take(4).forEach { genre -> TagChip(text = genre) }
+            }
+
+            Text(
+                "Description",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
+            )
+            Text(
+                text = data.description?.cleanAniListDescription() ?: "No description available.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            Spacer(Modifier.height(16.dp))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                data.fullMedia?.status?.let { status ->
+                    MetadataRow("Status", status.replace('_', ' ').lowercase())
+                }
+                data.fullMedia?.episodes?.let { eps ->
+                    MetadataRow("Total Episodes", "$eps")
+                }
+                data.fullMedia?.duration?.let { dur ->
+                    MetadataRow("Duration", "$dur min/ep")
+                }
+                data.fullMedia?.studios?.nodes?.firstOrNull()?.name?.let { studio ->
+                    MetadataRow("Studio", studio)
+                }
+                data.averageScore?.let { score ->
+                    MetadataRow("Rating", "$score% (${compactPopularity(data.popularity ?: 0)} votes)")
+                }
+                data.popularity?.let { pop ->
+                    MetadataRow("Popularity", "🔥 ${compactPopularity(pop)}")
+                }
+            }
+
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+

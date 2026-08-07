@@ -115,6 +115,7 @@ class AnivexaClient(
     private val aniDbApp = AniDbAppProvider(providerClient, json)
     private val kickAssAnime = KickAssAnimeProvider(providerClient, json)
     private val rareAnimes = RareAnimesProvider(providerClient)
+    private val donghua = DonghuaProvider(providerClient)
     private val hanime = HanimeProvider(context, providerClient, json, cache)
     private val hentaiHaven = HentaiHavenProvider(providerClient, json)
 
@@ -205,6 +206,7 @@ class AnivexaClient(
             "animekai" -> runInterruptible(Dispatchers.IO) { animeKai.sources(media, request.audio, request.episode) }
             "kaa" -> runInterruptible(Dispatchers.IO) { kickAssAnime.sources(media, request.audio, request.episode) }
             "rareanimes" -> runInterruptible(Dispatchers.IO) { rareAnimes.sources(media, request.audio, request.episode) }
+            "donghua" -> runInterruptible(Dispatchers.IO) { donghua.sources(media, request.audio, request.episode) }
             "reanime" -> reanime(media, request.audio, request.episode)
             "anizone" -> anizone(media, request.episode)
             "animegg" -> animegg(media, request.audio, request.episode)
@@ -243,6 +245,7 @@ class AnivexaClient(
         "animekai" -> runInterruptible(Dispatchers.IO) { animeKai.episodeAvailability(media) }
         "kaa" -> runInterruptible(Dispatchers.IO) { kickAssAnime.episodeAvailability(media) }
         "rareanimes" -> runInterruptible(Dispatchers.IO) { rareAnimes.episodeAvailability(media) }
+        "donghua" -> runInterruptible(Dispatchers.IO) { donghua.episodeAvailability(media) }
         "reanime" -> reanimeAvailability(media)
         "anizone" -> anizoneAvailability(media, count)
         "animegg" -> animeGgAvailability(media)

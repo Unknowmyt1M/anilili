@@ -1,6 +1,7 @@
 package com.anilili.ui.watch
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +16,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
@@ -66,7 +69,46 @@ internal fun PlayerControlsScaffold(
     // While the thumb is held, the slider tracks the finger, not the once-a-second position
     // update; the seek is committed on release so playback doesn't lurch through drag samples.
     var scrubFraction by remember { mutableStateOf<Float?>(null) }
+    var isLocked by remember { mutableStateOf(false) }
+
+    if (isLocked) {
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.3f))
+                .clickable { onInteract() },
+            contentAlignment = Alignment.BottomStart,
+        ) {
+            IconButton(
+                onClick = { isLocked = false },
+                modifier = Modifier.padding(16.dp),
+            ) {
+                Icon(
+                    imageVector = androidx.compose.material.icons.Icons.Default.Lock,
+                    contentDescription = "Unlock controls",
+                    tint = Color.White,
+                    modifier = Modifier.size(32.dp),
+                )
+            }
+        }
+        return
+    }
+
     Box(modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = { isLocked = true }) {
+                Icon(
+                    imageVector = androidx.compose.material.icons.Icons.Default.LockOpen,
+                    contentDescription = "Lock controls",
+                    tint = Color.White,
+                )
+            }
+        }
         Row(
             modifier = Modifier
                 .align(Alignment.TopEnd)

@@ -28,7 +28,7 @@ object ProviderCatalog {
     // Anivexa providers we query (reliable, self-hosted sources).
     val anivexaProviders = listOf(
         "senshi", "anibd", "anidbapp", "anikoto", "kaa", "allanime", "animekai", "reanime", "anizone", "animegg", "anineko", "2dhive",
-        "rareanimes",
+        "rareanimes", "donghua",
         "hanime", "hentaihaven",
     )
 
@@ -133,6 +133,7 @@ object ProviderCatalog {
         "animekai" -> "AnimeKai"
         "kaa" -> "KickAssAnime"
         "rareanimes" -> "RareAnimes"
+        "donghua" -> "Donghua (Multi-Source)"
         "hentaihaven" -> "Hentai Haven"
         else -> provider.replaceFirstChar { it.uppercase() }
     }
