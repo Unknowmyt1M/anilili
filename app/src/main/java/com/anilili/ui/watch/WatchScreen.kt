@@ -1721,53 +1721,57 @@ private fun MobileWatchDetails(
             }
             BulkDownloadStatus(modifier = Modifier.padding(horizontal = pad))
 
-            // Redesign Tab Switcher (Episodes | Recommendations)
+            // Segmented Control Rectangle Box for Tabs
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = pad, vertical = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(28.dp, Alignment.Start),
+                    .padding(horizontal = pad, vertical = 12.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    .padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(
-                    modifier = Modifier.clickable { selectedTab = 0 },
-                    horizontalAlignment = Alignment.CenterHorizontally,
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(
+                            if (selectedTab == 0) MaterialTheme.colorScheme.primary
+                            else Color.Transparent
+                        )
+                        .clickable { selectedTab = 0 }
+                        .padding(vertical = 10.dp),
+                    contentAlignment = Alignment.Center,
                 ) {
                     Text(
                         text = "Episodes (${data.episodes.size})",
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.labelLarge,
                         fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Medium,
-                        color = if (selectedTab == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (selectedTab == 0) MaterialTheme.colorScheme.onPrimary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    if (selectedTab == 0) {
-                        Box(
-                            Modifier
-                                .padding(top = 4.dp)
-                                .width(48.dp)
-                                .height(3.dp)
-                                .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(2.dp))
-                        )
-                    }
                 }
-                Column(
-                    modifier = Modifier.clickable { selectedTab = 1 },
-                    horizontalAlignment = Alignment.CenterHorizontally,
+
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(
+                            if (selectedTab == 1) MaterialTheme.colorScheme.primary
+                            else Color.Transparent
+                        )
+                        .clickable { selectedTab = 1 }
+                        .padding(vertical = 10.dp),
+                    contentAlignment = Alignment.Center,
                 ) {
                     Text(
                         text = "Recommendations",
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.labelLarge,
                         fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Medium,
-                        color = if (selectedTab == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (selectedTab == 1) MaterialTheme.colorScheme.onPrimary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    if (selectedTab == 1) {
-                        Box(
-                            Modifier
-                                .padding(top = 4.dp)
-                                .width(70.dp)
-                                .height(3.dp)
-                                .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(2.dp))
-                        )
-                    }
                 }
             }
         }
