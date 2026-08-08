@@ -989,6 +989,10 @@ fun PlayerSurface(
                 durationMs = durationMs,
                 hasPrevious = canGoPrevious,
                 hasNext = hasNextEpisode,
+                seriesTitle = seriesTitle,
+                episodeTitle = episodeTitle,
+                autoplay = autoplay,
+                onToggleAutoplay = { SettingsStore.setAutoplay(!autoplay) },
                 onPrevious = { currentOnPreviousEpisode?.invoke() },
                 onRewind = {
                     controller?.seekBack()
