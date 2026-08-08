@@ -36,9 +36,15 @@ internal class DonghuaProvider(private val client: OkHttpClient) {
     private val catalogs = ConcurrentHashMap<Int, Catalog>()
 
     fun episodeAvailability(media: Media): EpisodeAvailability {
-        val catalogMap = catalog(media).episodes
-        val availableEpisodes = catalogMap.keys.filter { it >= 1 }.sorted().toSet()
-        // Donghua series are primarily subbed (English/Indonesian/Multi-Sub)
+        // Fast, non-blocking episode count resolution so Donghua server always appears in the picker
+        val count = when {
+            media.status == "RELEASING" && media.nextAiringEpisode?.episode != null ->
+                (media.nextAiringEpisode.episode - 1).coerceAtLeast(1)
+            media.episodes != null && media.episodes > 0 -> media.episodes
+            media.format == "MOVIE" -> 1
+            else -> 100
+        }
+        val availableEpisodes = (1..count).toSet()
         return EpisodeAvailability(sub = availableEpisodes, dub = emptySet())
     }
 
@@ -91,13 +97,20 @@ internal class DonghuaProvider(private val client: OkHttpClient) {
         media.title.romaji?.let { rawTitles.add(it) }
         media.title.native?.let { rawTitles.add(it) }
 
-        // Expand Pinyin / English aliases via DONGHUA_TITLE_MAP
+        // Expand Pinyin / English aliases via DONGHUA_TITLE_MAP & season cleaning
         val expandedTitles = ArrayList<String>()
+        val seasonPattern = Regex("""\b(?:\d+(?:st|nd|rd|th)?\s+Season|Season\s+\d+|Part\s+\d+|\(CN\)|\(Chinese\)|2nd|3rd|4th|5th)\b""", RegexOption.IGNORE_CASE)
         for (t in rawTitles) {
             if (t.isBlank()) continue
             expandedTitles.add(t)
+            val cleaned = t.replace(seasonPattern, "").trim()
+            if (cleaned.isNotBlank() && cleaned != t) {
+                expandedTitles.add(cleaned)
+            }
             val normalized = t.lowercase().trim()
             DONGHUA_TITLE_MAP[normalized]?.let { expandedTitles.add(it) }
+            val cleanedNorm = cleaned.lowercase().trim()
+            DONGHUA_TITLE_MAP[cleanedNorm]?.let { expandedTitles.add(it) }
         }
 
         val titles = expandedTitles.filter { it.isNotBlank() }.distinct()
@@ -492,6 +505,8 @@ internal class DonghuaProvider(private val client: OkHttpClient) {
             "btth" to "Battle Through the Heavens",
             "douluo dalu" to "Soul Land",
             "soul land" to "Douluo Dalu",
+            "douluo dalu 2" to "Soul Land 2",
+            "soul land 2" to "Douluo Dalu II",
             "wanmei shijie" to "Perfect World",
             "perfect world" to "Wanmei Shijie",
             "xing chen bian" to "Stellar Transformation",
@@ -515,8 +530,25 @@ internal class DonghuaProvider(private val client: OkHttpClient) {
             "supreme god emperor" to "Zun Shang",
             "againts the sky supreme" to "Against the Sky Supreme",
             "against sky supreme" to "Against the Sky Supreme",
+            "ni tian zhi zun" to "Against the Sky Supreme",
             "bailian cheng shen" to "Apotheosis",
             "apotheosis" to "Bailian Cheng Shen",
+            "xian ni" to "Renegade Immortal",
+            "renegade immortal" to "Xian Ni",
+            "yao shen ji" to "Tales of Demons and Gods",
+            "tales of demons and gods" to "Yao Shen Ji",
+            "shen yin wang zuo" to "Throne of Seal",
+            "throne of seal" to "Shen Yin Wang Zuo",
+            "zhu xian" to "Jade Dynasty",
+            "jade dynasty" to "Zhu Xian",
+            "yuan zun" to "Dragon Prince Yuan",
+            "dragon prince yuan" to "Yuan Zun",
+            "lian qi shi wan nian" to "100,000 Years of Body Refining",
+            "100,000 years of body refining" to "Lian Qi Shi Wan Nian",
+            "jue shi wu shen" to "Peerless Martial Spirit",
+            "peerless martial spirit" to "Jue Shi Wu Shen",
+            "xue ying ling zhu" to "Snow Eagle Lord",
+            "snow eagle lord" to "Xue Ying Ling Zhu",
         )
     }
 }
