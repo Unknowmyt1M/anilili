@@ -19,6 +19,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -1036,7 +1037,6 @@ private fun WatchContent(
         }
     }
 }
-
 @Composable
 private fun WatchEpisodeSummary(
     data: WatchData,
@@ -1077,8 +1077,6 @@ private fun WatchEpisodeSummary(
 
     LaunchedEffect(saved) {
         if (restoreHeartFocus) {
-            // LibraryStore publishes a new list after the toggle. Restore the TV target after
-            // that recomposition instead of allowing focus to fall back to the player/back key.
             delay(60)
             runCatching { heartFocus.requestFocus() }
             restoreHeartFocus = false
@@ -1099,26 +1097,29 @@ private fun WatchEpisodeSummary(
     }
 
     Column(modifier = modifier.fillMaxWidth().focusGroup()) {
+        // ── 1. Anime Title Section (YouTube-Style Main Title) ──
         Text(
-            text = data.current.title?.takeIf { it.isNotBlank() }
-                ?: "Episode ${data.current.displayNumber}",
+            text = data.seriesTitle,
             style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Black,
+            fontWeight = FontWeight.Bold,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
+            color = Color.White,
             modifier = Modifier.clickable { showDescriptionSheet = true },
         )
+
+        // Metadata Subtitle: e.g. "82% score · Episode 2"
         Text(
             text = buildList {
                 data.averageScore?.let { add("$it% score") }
                 add("Episode ${data.current.displayNumber}")
             }.joinToString(" · "),
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 3.dp),
+            color = Color.White.copy(alpha = 0.7f),
+            modifier = Modifier.padding(top = 2.dp),
         )
 
-        // Redesign Watch Action Bar (Like, Dislike, Share, Download)
+        // ── 2. Engagement / Action Row (YouTube Pill Buttons) ──
         WatchActionBar(
             anilistId = data.anilistId,
             seriesTitle = data.seriesTitle,
@@ -1129,190 +1130,49 @@ private fun WatchEpisodeSummary(
             onDownload = onDownload,
         )
 
-        if (description.isNotBlank()) {
-            Text(
-                text = description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = if (descriptionExpanded) Int.MAX_VALUE else 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 7.dp),
-            )
-            if (canExpand) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.End)
-                        .focusRequester(moreFocus)
-                        .focusProperties { down = heartFocus }
-                        .onPreviewKeyEvent { event ->
-                            val keyCode = event.nativeKeyEvent.keyCode
-                            if (keyCode == AndroidKeyEvent.KEYCODE_DPAD_CENTER ||
-                                keyCode == AndroidKeyEvent.KEYCODE_ENTER ||
-                                keyCode == AndroidKeyEvent.KEYCODE_NUMPAD_ENTER
-                            ) {
-                                if (event.type == KeyEventType.KeyUp) {
-                                    descriptionExpanded = !descriptionExpanded
-                                }
-                                return@onPreviewKeyEvent true
-                            }
-                            if (keyCode == AndroidKeyEvent.KEYCODE_DPAD_DOWN) {
-                                if (event.type == KeyEventType.KeyUp) {
-                                    focusScope.launch {
-                                        delay(32)
-                                        heartFocus.requestFocus()
-                                    }
-                                }
-                                return@onPreviewKeyEvent true
-                            }
-                            false
-                        }
-                        .focusHighlight(RoundedCornerShape(16.dp))
-                        .clip(RoundedCornerShape(16.dp))
-                        .semantics {
-                            onClick(label = if (descriptionExpanded) "Show less" else "Show more") {
-                                descriptionExpanded = !descriptionExpanded
-                                true
-                            }
-                        }
-                        .pointerInput(descriptionExpanded) {
-                            detectTapGestures { descriptionExpanded = !descriptionExpanded }
-                        }
-                        .focusable()
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        if (descriptionExpanded) "Less" else "More",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
-            }
-        }
-
+        // ── 3. Anime Identity / Channel Section (Avatar + Title + Popularity + Subscribe Pill Button) ──
         Row(
-            modifier = Modifier.fillMaxWidth().padding(top = if (description.isBlank()) 10.dp else 4.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            // Tapping the series identity leaves the episode for the anime's detail page;
-            // the action buttons beside it keep their own click targets.
             Row(
                 modifier = Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(8.dp))
-                    .clickable(onClickLabel = "Open ${data.seriesTitle}", onClick = onOpenAnime)
-                    .focusHighlight(RoundedCornerShape(8.dp)),
+                    .clickable(onClickLabel = "Open ${data.seriesTitle}", onClick = onOpenAnime),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-            AsyncImage(
-                model = data.artworkUrl,
-                contentDescription = null,
-                modifier = Modifier.size(44.dp).clip(CircleShape),
-                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-            )
-            Column(Modifier.padding(start = 10.dp)) {
-                Text(
-                    text = data.seriesTitle,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                AsyncImage(
+                    model = data.artworkUrl,
+                    contentDescription = null,
+                    modifier = Modifier.size(42.dp).clip(CircleShape),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                 )
-                data.popularity?.let { popularity ->
+                Column(Modifier.padding(start = 10.dp)) {
                     Text(
-                        text = "${compactPopularity(popularity)} popularity",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        text = data.seriesTitle,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
-                }
-            }
-            }
-            val hasNativeDownloadAction = canDownload || episodeDownload != null || downloadPreparing
-            if (providerDownloadUrl != null) {
-                IconButton(
-                    onClick = {
-                        runCatching {
-                            context.startActivity(
-                                Intent(Intent.ACTION_VIEW, Uri.parse(providerDownloadUrl)),
-                            )
-                        }.onFailure {
-                            Toast.makeText(
-                                context,
-                                "No app can open these download options.",
-                                Toast.LENGTH_LONG,
-                            ).show()
-                        }
-                    },
-                    modifier = Modifier.focusHighlight(CircleShape),
-                ) {
-                    Icon(
-                        // Always the leaving-the-app icon: this opens the provider's own download
-                        // page in a browser. Showing a download glyph when the app itself cannot
-                        // save the episode (embeds) read as "save offline" and sent people to
-                        // Chrome instead.
-                        imageVector = Icons.AutoMirrored.Filled.OpenInNew,
-                        contentDescription = "Open the provider's download page in a browser",
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
-                }
-            }
-            if (hasNativeDownloadAction) {
-                val appDownloadCanStart = episodeDownload == null ||
-                    episodeDownload.state == EpisodeDownloadState.FAILED
-                val downloadEnabled = canDownload &&
-                    !downloadPreparing &&
-                    (canSaveToDevice || appDownloadCanStart)
-                val downloadDescription = when {
-                    downloadPreparing -> "Preparing episode download"
-                    episodeDownload?.state == EpisodeDownloadState.COMPLETED -> "Episode downloaded"
-                    episodeDownload?.state == EpisodeDownloadState.DOWNLOADING -> {
-                        val progress = episodeDownload.percent?.toInt()
-                        if (progress != null) "Downloading episode, $progress percent"
-                        else "Downloading episode"
-                    }
-                    episodeDownload?.state == EpisodeDownloadState.QUEUED -> "Episode download queued"
-                    episodeDownload?.state == EpisodeDownloadState.FAILED -> "Retry episode download"
-                    episodeDownload?.state == EpisodeDownloadState.REMOVING -> "Removing episode download"
-                    else -> "Download episode"
-                }
-                IconButton(
-                    onClick = onDownload,
-                    enabled = downloadEnabled,
-                    modifier = Modifier.focusHighlight(CircleShape),
-                ) {
-                    when {
-                        downloadPreparing || episodeDownload?.state == EpisodeDownloadState.DOWNLOADING -> {
-                            CircularProgressIndicator(
-                                modifier = Modifier
-                                    .size(22.dp)
-                                    .semantics { contentDescription = downloadDescription },
-                                strokeWidth = 2.dp,
-                            )
-                        }
-                        episodeDownload?.state == EpisodeDownloadState.COMPLETED -> {
-                            Icon(
-                                Icons.Default.CheckCircle,
-                                contentDescription = downloadDescription,
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                        else -> Icon(
-                            Icons.Default.Download,
-                            contentDescription = downloadDescription,
+                    data.popularity?.let { popularity ->
+                        Text(
+                            text = "${compactPopularity(popularity)} popularity",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White.copy(alpha = 0.65f),
                         )
                     }
                 }
             }
+
+            // YouTube-style Subscribe Button (Preserves old Heart/Favorite toggle action)
             Box(
                 modifier = Modifier
-                    .size(48.dp)
-                    .semantics {
-                        contentDescription = if (saved) "Remove from list" else "Add to list"
-                        onClick(label = if (saved) "Remove from list" else "Add to list") {
-                            toggleSaved()
-                            true
-                        }
-                    }
                     .focusRequester(heartFocus)
                     .focusProperties {
                         if (canExpand) up = moreFocus
@@ -1327,44 +1187,80 @@ private fun WatchEpisodeSummary(
                             if (event.type == KeyEventType.KeyUp) toggleSaved()
                             return@onPreviewKeyEvent true
                         }
-                        when {
-                            keyCode == AndroidKeyEvent.KEYCODE_DPAD_UP && canExpand -> {
-                                if (event.type == KeyEventType.KeyUp) {
-                                    focusScope.launch {
-                                        delay(32)
-                                        moreFocus.requestFocus()
-                                    }
-                                }
-                                true
-                            }
-                            keyCode == AndroidKeyEvent.KEYCODE_DPAD_DOWN && nextFocusRequester != null -> {
-                                if (event.type == KeyEventType.KeyUp) {
-                                    focusScope.launch {
-                                        delay(32)
-                                        nextFocusRequester.requestFocus()
-                                    }
-                                }
-                                true
-                            }
-                            else -> false
-                        }
+                        false
                     }
-                    .focusHighlight(CircleShape)
                     .clip(CircleShape)
-                    .pointerInput(saved) { detectTapGestures { toggleSaved() } }
-                    .focusable(),
+                    .background(
+                        if (saved) Color.White.copy(alpha = 0.15f)
+                        else Color.White
+                    )
+                    .clickable(onClick = toggleSaved)
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(
-                    imageVector = if (saved) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                    contentDescription = null,
-                    tint = if (saved) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    if (saved) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Text(
+                            text = "Subscribed",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                        )
+                    } else {
+                        Text(
+                            text = "Subscribe",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.Black,
+                        )
+                    }
+                }
+            }
+        }
+
+        // ── 4. Description / Synopsis Box ──
+        if (description.isNotBlank()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp, bottom = 6.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color.White.copy(alpha = 0.07f))
+                    .padding(12.dp),
+            ) {
+                Column {
+                    Text(
+                        text = description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.85f),
+                        maxLines = if (descriptionExpanded) Int.MAX_VALUE else 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (canExpand) {
+                        Text(
+                            text = if (descriptionExpanded) "Less" else "...more",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .align(Alignment.End)
+                                .clickable { descriptionExpanded = !descriptionExpanded }
+                                .padding(top = 4.dp),
+                        )
+                    }
+                }
             }
         }
     }
-
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -2785,59 +2681,68 @@ private fun WatchActionBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 12.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
+            .padding(vertical = 10.dp)
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Like Button
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
+        // Combined Like / Dislike YouTube Pill
+        Row(
             modifier = Modifier
-                .clip(RoundedCornerShape(12.dp))
-                .clickable { LibraryStore.toggleLike(anilistId) }
-                .padding(horizontal = 12.dp, vertical = 6.dp),
+                .clip(CircleShape)
+                .background(Color.White.copy(alpha = 0.12f)),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(
-                imageVector = Icons.Default.ThumbUp,
-                contentDescription = "Like",
-                tint = if (isLiked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(24.dp),
+            // Like Segment
+            Row(
+                modifier = Modifier
+                    .clickable { LibraryStore.toggleLike(anilistId) }
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.ThumbUp,
+                    contentDescription = "Like",
+                    tint = if (isLiked) MaterialTheme.colorScheme.primary else Color.White,
+                    modifier = Modifier.size(18.dp),
+                )
+                Text(
+                    text = if (isLiked) "1" else "Like",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White,
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .width(1.dp)
+                    .height(18.dp)
+                    .background(Color.White.copy(alpha = 0.2f))
             )
-            Text(
-                "Like",
-                style = MaterialTheme.typography.labelSmall,
-                color = if (isLiked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp),
-            )
+
+            // Dislike Segment
+            Box(
+                modifier = Modifier
+                    .clickable { LibraryStore.toggleDislike(anilistId) }
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.ThumbDown,
+                    contentDescription = "Dislike",
+                    tint = if (isDisliked) MaterialTheme.colorScheme.error else Color.White,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
         }
 
-        // Dislike Button
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
+        // Share Pill
+        Row(
             modifier = Modifier
-                .clip(RoundedCornerShape(12.dp))
-                .clickable { LibraryStore.toggleDislike(anilistId) }
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-        ) {
-            Icon(
-                imageVector = Icons.Default.ThumbDown,
-                contentDescription = "Dislike",
-                tint = if (isDisliked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(24.dp),
-            )
-            Text(
-                "Dislike",
-                style = MaterialTheme.typography.labelSmall,
-                color = if (isDisliked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp),
-            )
-        }
-
-        // Share Button
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier
-                .clip(RoundedCornerShape(12.dp))
+                .clip(CircleShape)
+                .background(Color.White.copy(alpha = 0.12f))
                 .clickable {
                     val shareIntent = Intent(Intent.ACTION_SEND).apply {
                         type = "text/plain"
@@ -2849,35 +2754,40 @@ private fun WatchActionBar(
                     }
                     context.startActivity(Intent.createChooser(shareIntent, "Share Anime"))
                 }
-                .padding(horizontal = 12.dp, vertical = 6.dp),
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Icon(
                 imageVector = Icons.Default.Share,
                 contentDescription = "Share",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(24.dp),
+                tint = Color.White,
+                modifier = Modifier.size(18.dp),
             )
             Text(
                 "Share",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White,
             )
         }
 
-        // Download Button
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
+        // Download Pill
+        Row(
             modifier = Modifier
-                .clip(RoundedCornerShape(12.dp))
+                .clip(CircleShape)
+                .background(Color.White.copy(alpha = 0.12f))
                 .clickable(enabled = canDownload && !downloadPreparing, onClick = onDownload)
-                .padding(horizontal = 12.dp, vertical = 6.dp),
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             when {
                 downloadPreparing || episodeDownload?.state == EpisodeDownloadState.DOWNLOADING -> {
                     CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp),
+                        modifier = Modifier.size(18.dp),
                         strokeWidth = 2.dp,
+                        color = Color.White,
                     )
                 }
                 episodeDownload?.state == EpisodeDownloadState.COMPLETED -> {
@@ -2885,23 +2795,27 @@ private fun WatchActionBar(
                         Icons.Default.CheckCircle,
                         contentDescription = "Downloaded",
                         tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(24.dp),
+                        modifier = Modifier.size(18.dp),
                     )
                 }
                 else -> {
                     Icon(
                         Icons.Default.Download,
                         contentDescription = "Download",
-                        tint = if (canDownload) MaterialTheme.colorScheme.onSurfaceVariant else Color.Gray,
-                        modifier = Modifier.size(24.dp),
+                        tint = if (canDownload) Color.White else Color.Gray,
+                        modifier = Modifier.size(18.dp),
                     )
                 }
             }
             Text(
-                "Download",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp),
+                text = when (episodeDownload?.state) {
+                    EpisodeDownloadState.COMPLETED -> "Downloaded"
+                    EpisodeDownloadState.DOWNLOADING -> "Downloading..."
+                    else -> "Download"
+                },
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = if (canDownload) Color.White else Color.Gray,
             )
         }
     }
