@@ -116,7 +116,6 @@ internal fun PlayerControlsScaffold(
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f),
             ) {
                 onBack?.let { backAction ->
                     IconButton(onClick = backAction) {
@@ -127,49 +126,37 @@ internal fun PlayerControlsScaffold(
                         )
                     }
                 }
-                if (!seriesTitle.isNullOrBlank()) {
-                    Column(modifier = Modifier.padding(start = 4.dp)) {
-                        Text(
-                            text = seriesTitle,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            maxLines = 1,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                        )
-                        if (!episodeTitle.isNullOrBlank()) {
-                            Text(
-                                text = episodeTitle,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color.White.copy(alpha = 0.75f),
-                                maxLines = 1,
-                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                            )
-                        }
-                    }
-                }
             }
 
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                // YouTube Autoplay Switch Pill
+                // YouTube Autoplay Icon Toggle
                 onToggleAutoplay?.let { toggle ->
-                    Box(
-                        modifier = Modifier
-                            .padding(end = 4.dp)
-                            .background(Color.White.copy(alpha = 0.18f), CircleShape)
-                            .clickable(onClick = toggle)
-                            .padding(horizontal = 10.dp, vertical = 4.dp),
-                        contentAlignment = Alignment.Center,
+                    IconButton(
+                        onClick = toggle,
+                        modifier = Modifier.semantics {
+                            contentDescription = if (autoplay) "Autoplay ON" else "Autoplay OFF"
+                        },
                     ) {
-                        Text(
-                            text = if (autoplay) "Autoplay ON" else "Autoplay OFF",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = if (autoplay) Color(0xFFFF0000) else Color.White.copy(alpha = 0.8f),
-                        )
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .background(
+                                    if (autoplay) MaterialTheme.colorScheme.primary
+                                    else Color.White.copy(alpha = 0.2f),
+                                    CircleShape,
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PlayArrow,
+                                contentDescription = null,
+                                tint = if (autoplay) Color.White else Color.White.copy(alpha = 0.5f),
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
                     }
                 }
                 IconButton(onClick = { isLocked = true }) {

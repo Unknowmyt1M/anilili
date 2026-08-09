@@ -1227,7 +1227,7 @@ private fun WatchEpisodeSummary(
             }
         }
 
-        // ── 4. Description / Synopsis Box ──
+        // ── 4. Collapsible Description / Synopsis Box ──
         if (description.isNotBlank()) {
             Box(
                 modifier = Modifier
@@ -1235,6 +1235,7 @@ private fun WatchEpisodeSummary(
                     .padding(top = 4.dp, bottom = 6.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .background(Color.White.copy(alpha = 0.07f))
+                    .clickable { if (canExpand) descriptionExpanded = !descriptionExpanded }
                     .padding(12.dp),
             ) {
                 Column {
@@ -1253,7 +1254,6 @@ private fun WatchEpisodeSummary(
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier
                                 .align(Alignment.End)
-                                .clickable { descriptionExpanded = !descriptionExpanded }
                                 .padding(top = 4.dp),
                         )
                     }

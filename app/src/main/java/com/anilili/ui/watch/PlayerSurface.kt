@@ -1016,6 +1016,15 @@ fun PlayerSurface(
                 },
                 onInteract = { phoneControlsInteraction++ },
                 topRightIcons = {
+                    CastButton(Modifier.size(48.dp))
+                    PlayerControlIconButton(
+                        "Settings",
+                        Icons.Default.Settings,
+                        onClick = {
+                            settingsExpanded = true
+                            phoneControlsInteraction++
+                        },
+                    )
                     onAddToList?.let { openList ->
                         PlayerControlIconButton(
                             "Add to My List",
@@ -1046,20 +1055,11 @@ fun PlayerSurface(
                         phoneControlsInteraction++
                     },
                 )
-                CastButton(Modifier.size(48.dp))
                 PlayerControlIconButton(
                     if (isFullscreen) "Exit fullscreen" else "Fullscreen",
                     if (isFullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
                     onClick = {
                         onToggleFullscreen?.invoke()
-                        phoneControlsInteraction++
-                    },
-                )
-                PlayerControlIconButton(
-                    "Settings",
-                    Icons.Default.Settings,
-                    onClick = {
-                        settingsExpanded = true
                         phoneControlsInteraction++
                     },
                 )
