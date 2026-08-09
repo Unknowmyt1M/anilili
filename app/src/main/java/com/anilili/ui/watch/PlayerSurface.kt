@@ -488,6 +488,7 @@ fun PlayerSurface(
 
     var positionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
+    var bufferedPositionMs by remember { mutableLongStateOf(0L) }
     val queueTvSeek: (Long) -> Unit = { offsetMs ->
         controller?.let { activeController ->
             val knownDurationMs = activeController.duration
@@ -528,6 +529,7 @@ fun PlayerSurface(
                 positionMs = activeController.currentPosition.coerceAtLeast(0)
             }
             durationMs = activeController.duration.coerceAtLeast(0)
+            bufferedPositionMs = activeController.bufferedPosition.coerceAtLeast(0)
             // The controller's own media id is the only reliable statement of which stream this
             // clock belongs to: while a new episode is being prepared the controller still reports
             // the outgoing item's position, and both move to the new item together.
@@ -987,6 +989,7 @@ fun PlayerSurface(
                 isPlaying = playbackIsPlaying,
                 positionMs = positionMs,
                 durationMs = durationMs,
+                bufferedPositionMs = bufferedPositionMs,
                 hasPrevious = canGoPrevious,
                 hasNext = hasNextEpisode,
                 seriesTitle = seriesTitle,

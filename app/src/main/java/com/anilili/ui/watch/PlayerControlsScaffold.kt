@@ -55,6 +55,7 @@ internal fun PlayerControlsScaffold(
     isPlaying: Boolean,
     positionMs: Long,
     durationMs: Long,
+    bufferedPositionMs: Long = 0L,
     hasPrevious: Boolean,
     hasNext: Boolean,
     onPrevious: () -> Unit,
@@ -73,7 +74,6 @@ internal fun PlayerControlsScaffold(
     topRightIcons: @Composable RowScope.() -> Unit = {},
     bottomRightIcons: @Composable RowScope.() -> Unit = {},
 ) {
-    var scrubFraction by remember { mutableStateOf<Float?>(null) }
     var isLocked by remember { mutableStateOf(false) }
 
     if (isLocked) {
@@ -211,7 +211,7 @@ internal fun PlayerControlsScaffold(
             PlayerControlIconButton("Next episode", Icons.Default.SkipNext, enabled = hasNext, onClick = onNext)
         }
 
-        // ── YouTube Bottom Bar (Red Slider & Controls) ──
+        // ── YouTube Bottom Bar (Red Scrubber & Controls) ──
         Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -221,30 +221,13 @@ internal fun PlayerControlsScaffold(
                 )
                 .padding(horizontal = 12.dp, vertical = 6.dp),
         ) {
-            val fraction = scrubFraction
-                ?: if (durationMs > 0L) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
-
-            // YouTube Brand Red Progress Bar Slider (#FF0000)
-            Slider(
-                value = fraction,
-                onValueChange = {
-                    if (durationMs > 0L) scrubFraction = it
-                    onInteract()
-                },
-                onValueChangeFinished = {
-                    scrubFraction?.let { onSeek((it * durationMs).toLong()) }
-                    scrubFraction = null
-                },
-                enabled = durationMs > 0L,
-                colors = androidx.compose.material3.SliderDefaults.colors(
-                    thumbColor = Color(0xFFFF0000),
-                    activeTrackColor = Color(0xFFFF0000),
-                    inactiveTrackColor = Color.White.copy(alpha = 0.35f),
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(28.dp)
-                    .semantics { contentDescription = "Seek" },
+            // YouTube 3-Layer Scrubber Bar (Played = Red, Loaded/Buffered = Semi-Transparent White, Unloaded = Dark)
+            YouTubeScrubberBar(
+                positionMs = positionMs,
+                bufferedPositionMs = bufferedPositionMs,
+                durationMs = durationMs,
+                onSeek = onSeek,
+                onInteract = onInteract,
             )
 
             Row(
@@ -252,9 +235,8 @@ internal fun PlayerControlsScaffold(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                val shownMs = scrubFraction?.let { (it * durationMs).toLong() } ?: positionMs
                 Text(
-                    "${formatPlayerTime(shownMs)} / ${formatPlayerTime(durationMs)}",
+                    "${formatPlayerTime(positionMs)} / ${formatPlayerTime(durationMs)}",
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = Color.White,
@@ -262,6 +244,93 @@ internal fun PlayerControlsScaffold(
                 Row(verticalAlignment = Alignment.CenterVertically, content = bottomRightIcons)
             }
         }
+    }
+}
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+internal fun YouTubeScrubberBar(
+    positionMs: Long,
+    bufferedPositionMs: Long,
+    durationMs: Long,
+    onSeek: (Long) -> Unit,
+    modifier: Modifier = Modifier,
+    onInteract: () -> Unit = {},
+) {
+    var scrubFraction by remember { mutableStateOf<Float?>(null) }
+    val playedFraction = scrubFraction
+        ?: if (durationMs > 0L) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
+    val bufferedFraction = if (durationMs > 0L) (bufferedPositionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(24.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        // YouTube 3-Layer Scrubber Canvas (Thin 3dp line)
+        androidx.compose.foundation.Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(3.dp)
+                .padding(horizontal = 6.dp)
+        ) {
+            val width = size.width
+            val height = size.height
+            val radius = height / 2f
+
+            // 1. Total Unbuffered Track (Dark Gray Translucent Line)
+            drawRoundRect(
+                color = Color.White.copy(alpha = 0.25f),
+                size = androidx.compose.ui.geometry.Size(width, height),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius, radius),
+            )
+
+            // 2. Buffered / Loaded Track (Light Gray / White Highlight)
+            if (bufferedFraction > 0f) {
+                drawRoundRect(
+                    color = Color.White.copy(alpha = 0.6f),
+                    size = androidx.compose.ui.geometry.Size(width * bufferedFraction, height),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius, radius),
+                )
+            }
+
+            // 3. Played Track (YouTube Red #FF0000)
+            if (playedFraction > 0f) {
+                drawRoundRect(
+                    color = Color(0xFFFF0000),
+                    size = androidx.compose.ui.geometry.Size(width * playedFraction, height),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius, radius),
+                )
+            }
+        }
+
+        // YouTube Touch Slider Overlay with Round Circle Red Dot Thumb
+        Slider(
+            value = playedFraction,
+            onValueChange = {
+                if (durationMs > 0L) scrubFraction = it
+                onInteract()
+            },
+            onValueChangeFinished = {
+                scrubFraction?.let { onSeek((it * durationMs).toLong()) }
+                scrubFraction = null
+            },
+            enabled = durationMs > 0L,
+            thumb = {
+                Box(
+                    modifier = Modifier
+                        .size(12.dp)
+                        .background(Color(0xFFFF0000), CircleShape)
+                )
+            },
+            colors = androidx.compose.material3.SliderDefaults.colors(
+                thumbColor = Color(0xFFFF0000),
+                activeTrackColor = Color.Transparent,
+                inactiveTrackColor = Color.Transparent,
+            ),
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 

@@ -176,93 +176,52 @@ internal class DonghuaProvider(private val client: OkHttpClient) {
     }
 
     /**
-     * Finds the best candidate series URL from a search result page.
-     *
-     * AnimeStream WordPress sites (animexin.dev, luciferdonghua.in, donghuastream.org) use:
-     *   article.bs > div.bsx > a[title="Series Name"][href="https://..."]
-     *
-     * We extract cards using this pattern specifically, then fall back to generic link scoring.
+     * Finds the best candidate series URL from a search result page using Jsoup DOM selectors.
      */
     private fun findBestCandidateUrl(html: String, query: String, baseUrl: String): String? {
-        // ── Primary: extract search result cards via article.bs > div.bsx > a ──
-        // This matches what animexin_extension.dart & logic.txt confirm as the real selector
-        val cardPattern = Regex(
-            """<article\b[^>]*class=["'][^"']*\bbs\b[^"']*["'][^>]*>[\s\S]*?<a\b([^>]*href=(["'])(https?://[^"']+)\2[^>]*)>""",
-            setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE),
-        )
-        val cardMatches = cardPattern.findAll(html).toList()
+        val doc = org.jsoup.Jsoup.parse(html)
 
-        if (cardMatches.isNotEmpty()) {
+        // ── Primary: Jsoup card selection (article.bs div.bsx a, div.bsx a, div.animposx a) ──
+        val cards = doc.select("article.bs div.bsx a, div.bsx a, div.animposx a")
+        if (cards.isNotEmpty()) {
             var bestUrl: String? = null
             var maxScore = 0.0
-            for (cm in cardMatches) {
-                val tagAttrs = cm.groupValues[1]
-                val linkUrl = cm.groupValues[3]
-                val titleAttr = NativeProviderParsers.attr(tagAttrs, "title")
-                val slugText = linkUrl.substringAfterLast("/").replace('-', ' ')
-                val candidateText = listOf(titleAttr, slugText).filter { it.isNotBlank() }.joinToString(" ")
+            for (card in cards) {
+                val href = card.attr("href")
+                if (href.isBlank()) continue
+                val titleAttr = card.attr("title")
+                val text = card.text()
+                val slugText = href.substringAfterLast("/").replace('-', ' ')
+                val candidateText = listOf(titleAttr, text, slugText).filter { it.isNotBlank() }.joinToString(" ")
                 val score = NativeProviderParsers.titleScore(query, candidateText)
                 if (score > maxScore) {
                     maxScore = score
-                    bestUrl = linkUrl
+                    bestUrl = href
                 }
             }
-            // Accept if score >= 0.15 (lower threshold since title attribute is reliable)
             if (bestUrl != null && maxScore >= 0.15) return bestUrl
-            // Accept first card if no score threshold met (single result likely correct)
-            if (cardMatches.size == 1) {
-                val firstHref = cardMatches[0].groupValues[3]
+            if (cards.size == 1) {
+                val firstHref = cards[0].attr("href")
                 if (firstHref.startsWith(baseUrl)) return firstHref
             }
         }
 
-        // ── Fallback: bsx anchor without enclosing article ──
-        val bsxPattern = Regex(
-            """<div\b[^>]*class=["'][^"']*\bbsx\b[^"']*["'][^>]*>[\s\S]{0,200}?<a\b([^>]*href=(["'])(https?://[^"']+)\2[^>]*)>""",
-            setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE),
-        )
-        val bsxMatches = bsxPattern.findAll(html).toList()
-        if (bsxMatches.isNotEmpty()) {
-            var bestUrl: String? = null
-            var maxScore = 0.0
-            for (bm in bsxMatches) {
-                val tagAttrs = bm.groupValues[1]
-                val linkUrl = bm.groupValues[3]
-                val titleAttr = NativeProviderParsers.attr(tagAttrs, "title")
-                val slugText = linkUrl.substringAfterLast("/").replace('-', ' ')
-                val candidateText = listOf(titleAttr, slugText).filter { it.isNotBlank() }.joinToString(" ")
-                val score = NativeProviderParsers.titleScore(query, candidateText)
-                if (score > maxScore) {
-                    maxScore = score
-                    bestUrl = linkUrl
-                }
-            }
-            if (bestUrl != null && maxScore >= 0.15) return bestUrl
-        }
-
-        // ── Last resort: generic link scoring (original logic) ──
-        val matches = Regex(
-            """\<a\b([^>]*href=(["'])(.*?)\2[^>]*)>([\s\S]*?)</a>""",
-            RegexOption.IGNORE_CASE,
-        ).findAll(html)
-
+        // ── Fallback: Generic link scoring via Jsoup DOM ──
         var bestUrl: String? = null
         var maxScore = 0.0
-        for (match in matches) {
-            val tagAttrs = match.groupValues[1]
-            val linkUrl = match.groupValues[3]
-            val innerContent = NativeProviderParsers.stripTags(match.groupValues[4])
-            val titleAttr = NativeProviderParsers.attr(tagAttrs, "title")
-            val candidateText = listOf(innerContent, titleAttr, linkUrl.replace('-', ' '))
-                .filter { it.isNotBlank() }.joinToString(" ")
-            if (!linkUrl.contains(".js") && !linkUrl.contains(".css") &&
-                linkUrl.startsWith(baseUrl) && !linkUrl.contains("page/") &&
-                !linkUrl.contains("/genres/") && !linkUrl.contains("/network/") &&
-                !linkUrl.contains("/studio/") && !linkUrl.contains("/country/")) {
+        for (a in doc.select("a[href]")) {
+            val href = a.attr("href")
+            val text = a.text()
+            val title = a.attr("title")
+            val candidateText = listOf(text, title, href.replace('-', ' ')).filter { it.isNotBlank() }.joinToString(" ")
+            if (!href.contains(".js") && !href.contains(".css") &&
+                href.startsWith(baseUrl) && !href.contains("page/") &&
+                !href.contains("/genres/") && !href.contains("/network/") &&
+                !href.contains("/studio/") && !href.contains("/country/")) {
                 val score = NativeProviderParsers.titleScore(query, candidateText)
                 if (score > maxScore && score >= 0.15) {
                     maxScore = score
-                    bestUrl = NativeProviderParsers.absoluteUrl(baseUrl, linkUrl)
+                    bestUrl = NativeProviderParsers.absoluteUrl(baseUrl, href)
                 }
             }
         }
@@ -275,19 +234,18 @@ internal class DonghuaProvider(private val client: OkHttpClient) {
         html: String,
     ): List<Pair<Int, EpisodeLink>> {
         val result = ArrayList<Pair<Int, EpisodeLink>>()
+        val doc = org.jsoup.Jsoup.parse(html)
 
-        // Match episode links in <ul class="eplister"> or generic anchor tags
-        val matches = Regex(
-            """<a\b([^>]*href=(["'])(.*?)\2[^>]*)>([\s\S]*?)</a>""",
-            RegexOption.IGNORE_CASE,
-        ).findAll(html)
+        // Target <div class="eplister"> or <ul id="episode_list"> specifically via Jsoup CSS selectors
+        val anchors = doc.select("div.eplister ul li a, ul#episode_list li a, .eplister a")
+            .ifEmpty { doc.select("a[href*=-episode-], a[href*=-ep-]") }
 
-        for (match in matches) {
-            val tagAttrs = match.groupValues[1]
-            val href = match.groupValues[3]
-            val innerText = NativeProviderParsers.stripTags(match.groupValues[4])
-            val titleAttr = NativeProviderParsers.attr(tagAttrs, "title")
+        for (anchor in anchors) {
+            val href = anchor.attr("href")
+            if (href.isBlank()) continue
 
+            val innerText = anchor.text()
+            val titleAttr = anchor.attr("title")
             val combined = "$href $innerText $titleAttr"
 
             val epNum = Regex("""\b(?:episode|ep)[\s.-]*(\d+)""", RegexOption.IGNORE_CASE)
@@ -313,7 +271,7 @@ internal class DonghuaProvider(private val client: OkHttpClient) {
         val baseUrl = "https://animecube.live"
         for (query in titles) {
             // 1. Try WordPress search first
-            val encodedQuery = java.net.URLEncoder.encode(query, StandardCharsets.UTF_8.name())
+            val encodedQuery = URLEncoder.encode(query, StandardCharsets.UTF_8.name())
             val searchHtml = fetchHtml("$baseUrl/?s=$encodedQuery")
             if (searchHtml != null) {
                 val candidateUrl = findBestCandidateUrl(searchHtml, query, baseUrl)
@@ -336,33 +294,26 @@ internal class DonghuaProvider(private val client: OkHttpClient) {
     }
 
     /**
-     * Extracts playable stream items from an episode watch link.
+     * Extracts playable stream items from an episode watch link using Jsoup.
      */
     private fun extractStreamsFromLink(link: EpisodeLink): List<StreamItem> {
         val html = fetchHtml(link.url) ?: return emptyList()
+        val doc = org.jsoup.Jsoup.parse(html)
         val streams = ArrayList<StreamItem>()
 
-        // 1. Check for AnimeStream Base64 option values inside select element
-        for (option in Regex("""<option\b[^>]*value=(["'])(.*?)\1[^>]*>([\s\S]*?)</option>""", RegexOption.IGNORE_CASE).findAll(html)) {
-            val rawValue = option.groupValues[2].trim()
-            val serverName = NativeProviderParsers.stripTags(option.groupValues[3]).trim()
+        // 1. Jsoup option selection for AnimeStream select.mirror or option elements
+        for (option in doc.select("select.mirror option, option[value]")) {
+            val rawValue = option.attr("value").trim()
+            val serverName = option.text().trim()
             if (rawValue.isBlank() || serverName.contains("Select Video Server", ignoreCase = true)) continue
 
-            // CRITICAL: Strip embedded newlines/CR before Base64 decode.
-            // animexin.dev HTML-formats long base64 strings with line breaks inside the value attribute.
-            // android.util.Base64.decode will fail silently on these without prior stripping.
-            // (Same fix as in animexin_extension.dart line 480: valAttr.replaceAll('\n', '').trim())
             val cleanValue = rawValue.replace("\n", "").replace("\r", "").replace(" ", "")
 
-            // Attempt Base64 decode: try DEFAULT first, then URL_SAFE fallback
             val decodedHtml = runCatching {
                 String(Base64.decode(cleanValue, Base64.DEFAULT), StandardCharsets.UTF_8)
             }.getOrNull() ?: runCatching {
                 String(Base64.decode(cleanValue, Base64.URL_SAFE), StandardCharsets.UTF_8)
-            }.getOrNull() ?: run {
-                DiagnosticsLog.event("Donghua Base64 decode failed for server: $serverName")
-                rawValue  // fallback: use raw value as-is
-            }
+            }.getOrNull() ?: rawValue
 
             val iframeSrc = Regex("""<iframe\b[^>]*src=(["'])(.*?)\1""", RegexOption.IGNORE_CASE)
                 .find(decodedHtml)?.groupValues?.get(2)
@@ -387,12 +338,10 @@ internal class DonghuaProvider(private val client: OkHttpClient) {
             }
         }
 
-        // 2. Direct iframe embeds on the page if options were empty
+        // 2. Direct iframe embeds via Jsoup doc.select("iframe[src]")
         if (streams.isEmpty()) {
-            val directIframes = Regex("""<iframe\b[^>]*src=(["'])(.*?)\1""", RegexOption.IGNORE_CASE)
-                .findAll(html)
-            for (match in directIframes) {
-                val iframeUrl = match.groupValues[2]
+            for (iframe in doc.select("iframe[src]")) {
+                val iframeUrl = iframe.attr("src")
                 if (iframeUrl.contains("google") || iframeUrl.contains("facebook")) continue
                 val cleanUrl = if (iframeUrl.startsWith("//")) "https:$iframeUrl" else iframeUrl
                 val directStream = resolveEmbedToDirectStream(cleanUrl) ?: cleanUrl
@@ -417,17 +366,83 @@ internal class DonghuaProvider(private val client: OkHttpClient) {
     private fun resolveEmbedToDirectStream(embedUrl: String): String? {
         if (embedUrl.contains(".m3u8")) return embedUrl
 
-        // StreamWish / SeekPlayer / Filemoon: scrape page for HLS source
+        // 1. StreamPlay (play.streamplay.co.in) — unpacked kaken API resolver (from donghuastream_fixed.dart)
+        if (embedUrl.contains("streamplay.co.in")) {
+            val videoId = embedUrl.substringAfter("/embed/").substringBefore("?").substringBefore("#")
+            if (videoId.isNotBlank()) {
+                val embedPageUrl = "https://play.streamplay.co.in/embed/$videoId"
+                val html = fetchHtml(embedPageUrl, referer = "https://donghuastream.org/")
+                if (html != null) {
+                    val unpacked = unpackPacker(html)
+                    val kakenValue = Regex("""window\.kaken\s*=\s*"([^"]+)"""").find(unpacked)?.groupValues?.get(1)
+                    if (!kakenValue.isNullOrBlank()) {
+                        val apiUrl = "https://play.streamplay.co.in/api/?$kakenValue"
+                        val apiJson = fetchHtml(apiUrl, referer = "https://play.streamplay.co.in/")
+                        if (apiJson != null) {
+                            val masterUrl = Regex(""""file":\s*"(https?[^"]+\.m3u8[^"]*)"""").find(apiJson)?.groupValues?.get(1)
+                                ?.replace("\\/", "/")
+                            if (!masterUrl.isNullOrBlank()) return masterUrl
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. StreamWish / SeekPlayer / WishFast / StrWish — JS Packer + AES-128-CBC + Regex (from streamwish.py & Extractors.kt)
         if (embedUrl.contains("seekplayer.") || embedUrl.contains("streamwish") ||
             embedUrl.contains("wishfast") || embedUrl.contains("strwish") ||
             embedUrl.contains("awish") || embedUrl.contains("wishembed") ||
             embedUrl.contains("filemoon") || embedUrl.contains("ahvsh.")) {
-            val html = fetchHtml(embedUrl) ?: return null
-            val m3u8List = NativeProviderParsers.hlsUrls(html)
-            if (m3u8List.isNotEmpty()) return m3u8List.first()
+
+            val uri = runCatching { android.net.Uri.parse(embedUrl) }.getOrNull()
+            val host = uri?.host ?: ""
+            val scheme = uri?.scheme ?: "https"
+            val baseUrl = "$scheme://$host"
+            val playerId = Regex("""#([a-zA-Z0-9]+)$""").find(embedUrl)?.groupValues?.get(1) ?: ""
+
+            if (playerId.isNotBlank()) {
+                val apiRequest = Request.Builder()
+                    .url("$baseUrl/api/v1/video?id=$playerId&w=1920&h=1080&r=")
+                    .header("Referer", "$baseUrl/")
+                    .header("User-Agent", USER_AGENT)
+                    .build()
+                val apiHex = runCatching {
+                    client.newCall(apiRequest).execute().use { it.body?.string() }
+                }.getOrNull()?.trim()
+
+                if (!apiHex.isNullOrBlank()) {
+                    val decrypted = decryptSeekplayerHex(apiHex, "kiemtienmua911ca", "1234567890oiuytr")
+                    if (decrypted.isNotBlank()) {
+                        val m3u8Url = Regex(""""cf":\s*"(https?[^"]+)"""").find(decrypted)?.groupValues?.get(1)
+                            ?.replace("\\/", "/")
+                            ?: Regex(""""source":\s*"(https?[^"]+)"""").find(decrypted)?.groupValues?.get(1)
+                                ?.replace("\\/", "/")
+                        if (!m3u8Url.isNullOrBlank()) return m3u8Url
+                    }
+                }
+            }
+
+            // Fallback: unpack JS Packer HTML
+            val html = fetchHtml(embedUrl)
+            if (html != null) {
+                val unpacked = unpackPacker(html)
+                val m3u8Url = Regex("""file\s*:\s*["'](https?://[^"']+\.m3u8[^"']*)["']""").find(unpacked)?.groupValues?.get(1)
+                    ?: NativeProviderParsers.hlsUrls(unpacked).firstOrNull()
+                if (!m3u8Url.isNullOrBlank()) return m3u8Url.replace("\\/", "/")
+            }
         }
 
-        // Dailymotion: use player metadata API (same as Dart extension)
+        // 3. Vtbe (vtbe.to) — JS Packer (from Desktop Animexin Extractors.kt)
+        if (embedUrl.contains("vtbe.to")) {
+            val html = fetchHtml(embedUrl, referer = "https://vtbe.to/")
+            if (html != null) {
+                val unpacked = unpackPacker(html)
+                val link = Regex("""sources:\[\{file:"(.*?)"\""").find(unpacked)?.groupValues?.get(1)
+                if (!link.isNullOrBlank()) return link.replace("\\/", "/")
+            }
+        }
+
+        // 4. Dailymotion — player metadata API (from animexin_extension.dart)
         if (embedUrl.contains("dailymotion.com")) {
             val videoId = Regex("[?&]video=([a-zA-Z0-9]+)").find(embedUrl)?.groupValues?.get(1)
                 ?: Regex("/video/([a-zA-Z0-9]+)").find(embedUrl)?.groupValues?.get(1)
@@ -441,37 +456,73 @@ internal class DonghuaProvider(private val client: OkHttpClient) {
                 val metaJson = runCatching {
                     client.newCall(metaRequest).execute().use { it.body?.string() }
                 }.getOrNull() ?: return null
-                // Extract master m3u8 from qualities.auto[0].url
                 val masterUrl = Regex(""""url":\s*"(https[^"]+\.m3u8[^"]*)"""").find(metaJson)?.groupValues?.get(1)
                     ?.replace("\\u0026", "&")
                 if (!masterUrl.isNullOrBlank()) return masterUrl
             }
         }
 
-        // ok.ru embeds: pass through directly (player renders via embed)
         if (embedUrl.contains("ok.ru/videoembed/")) return embedUrl
 
-        // StreamSB / SBLona
         if (embedUrl.contains("sblona.") || embedUrl.contains("streamsb.")) {
             val html = fetchHtml(embedUrl) ?: return null
             val m3u8List = NativeProviderParsers.hlsUrls(html)
             if (m3u8List.isNotEmpty()) return m3u8List.first()
         }
 
-        // DoodStream: pass through directly
         if (embedUrl.contains("dood.") || embedUrl.contains("dooo")) return embedUrl
 
         return null
     }
 
-    private fun fetchHtml(url: String): String? {
-        val request = Request.Builder()
+    private fun unpackPacker(js: String): String {
+        val match = Regex("""eval\(function\(p,a,c,k,e,d\)[\s\S]*?\)\((.*?)\)""").find(js) ?: return js
+        val argsStr = match.groupValues[1]
+        val argsPattern = Regex("""'(.*?)',(.*?),(.*?),'(.*?)'\.split""")
+        val m = argsPattern.find(argsStr) ?: return js
+        var p = m.groupValues[1]
+        val a = m.groupValues[2].toIntOrNull() ?: 10
+        val c = m.groupValues[3].toIntOrNull() ?: 0
+        val k = m.groupValues[4].split('|')
+        for (i in c - 1 downTo 0) {
+            val word = if (i < k.size && k[i].isNotBlank()) k[i] else i.toString(a)
+            p = p.replace(Regex("""\b""" + i.toString(a) + """\b"""), word)
+        }
+        return p
+    }
+
+    private fun decryptSeekplayerHex(hexCipher: String, keyStr: String, ivStr: String): String {
+        return runCatching {
+            val key = javax.crypto.spec.SecretKeySpec(keyStr.toByteArray(StandardCharsets.UTF_8), "AES")
+            val iv = javax.crypto.spec.IvParameterSpec(ivStr.toByteArray(StandardCharsets.UTF_8))
+            val cipher = javax.crypto.Cipher.getInstance("AES/CBC/PKCS5Padding")
+            cipher.init(javax.crypto.Cipher.DECRYPT_MODE, key, iv)
+            val cipherBytes = hexToBytes(hexCipher)
+            String(cipher.doFinal(cipherBytes), StandardCharsets.UTF_8)
+        }.getOrDefault("")
+    }
+
+    private fun hexToBytes(hex: String): ByteArray {
+        val len = hex.length
+        val data = ByteArray(len / 2)
+        var i = 0
+        while (i < len - 1) {
+            data[i / 2] = ((Character.digit(hex[i], 16) shl 4) + Character.digit(hex[i + 1], 16)).toByte()
+            i += 2
+        }
+        return data
+    }
+
+    private fun fetchHtml(url: String, referer: String? = null): String? {
+        val builder = Request.Builder()
             .url(url)
             .header("User-Agent", USER_AGENT)
             .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-            .build()
+        if (!referer.isNullOrBlank()) {
+            builder.header("Referer", referer)
+        }
         return runCatching {
-            client.newCall(request).execute().use { response ->
+            client.newCall(builder.build()).execute().use { response ->
                 if (response.isSuccessful) response.body?.string() else null
             }
         }.getOrNull()
