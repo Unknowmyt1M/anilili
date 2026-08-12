@@ -32,6 +32,7 @@ class ShortItem(BaseModel):
 class ShortsPage(BaseModel):
     items: List[ShortItem]
     nextCursor: Optional[str] = None
+    isReplenishing: bool = False
 
 
 class StreamResponse(BaseModel):

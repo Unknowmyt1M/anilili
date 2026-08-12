@@ -108,6 +108,18 @@ class ShortsViewModel(
                 // FIX #3: Immediately begin prefetching from index 0 the moment the feed loads
                 // This starts stream preparation BEFORE the user even swipes
                 schedulePrefetch(lastPageIndex)
+
+                if (page.isReplenishing && page.nextCursor != null) {
+                    AppLogShipper.d(TAG, "[FEED_REPLENISHING] Backend is discovering more shorts, retrying in 2.5s...")
+                    viewModelScope.launch {
+                        kotlinx.coroutines.delay(2500)
+                        val curr = _uiState.value as? ShortsUiState.Loaded
+                        if (curr != null && curr.nextCursor == page.nextCursor && !curr.isLoadingMore) {
+                            loadFeed(reset = false)
+                        }
+                    }
+                }
+
             }.onFailure { error ->
                 if (reset || currentState !is ShortsUiState.Loaded) {
                     val msg = error.message ?: "Failed to load shorts feed"

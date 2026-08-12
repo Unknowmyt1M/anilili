@@ -18,17 +18,19 @@ async def get_ranked_shorts(
             id, youtube_video_id, youtube_url, title, description, channel_name,
             thumbnail_url, anilist_id, series_title, poster_url, episode_number,
             video_url, stream_type, stream_expires_at, like_count, dislike_count,
-            resolution_method, resolution_confidence, is_unavailable, created_at
+            resolution_method, resolution_confidence, is_unavailable, created_at,
+            feed_position
         FROM shorts
         WHERE is_unavailable = 0 AND fail_count < 3
+
     """
     params: List[Any] = []
 
     if cursor:
-        query += " AND created_at < ?"
-        params.append(cursor)
+        query += " AND feed_position < ?"
+        params.append(float(cursor))
 
-    query += " ORDER BY created_at DESC, id DESC LIMIT ?"
+    query += " ORDER BY feed_position DESC, id DESC LIMIT ?"
     params.append(limit + 1)  # fetch 1 extra to check for next page
 
     async with db.execute(query, params) as stmt:
@@ -36,7 +38,9 @@ async def get_ranked_shorts(
 
     has_next = len(rows) > limit
     items_rows = rows[:limit]
-    next_cursor = items_rows[-1]["created_at"] if has_next and items_rows else None
+    # FIX: Generate cursor from feed_position. If list has items, always return nextCursor
+    # so client can continue pagination even if len(items_rows) < limit.
+    next_cursor = str(items_rows[-1]["feed_position"]) if items_rows else None
 
     # Fetch user reactions if user_id is provided
     user_reactions = {}

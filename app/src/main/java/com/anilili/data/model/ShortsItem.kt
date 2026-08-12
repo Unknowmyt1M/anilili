@@ -31,6 +31,8 @@ data class ShortsItem(
 data class ShortsPage(
     @SerialName("items") val items: List<ShortsItem> = emptyList(),
     @SerialName("nextCursor") val nextCursor: String? = null,
+    @SerialName("isReplenishing") val isReplenishing: Boolean = false,
+
 )
 
 @Serializable

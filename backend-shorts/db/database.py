@@ -68,4 +68,14 @@ async def init_db(db_path: str = DATABASE_PATH) -> None:
         CREATE INDEX IF NOT EXISTS idx_app_logs_device ON app_logs (device_id, received_at DESC);
         """)
 
+        # Add feed_position column safely
+        try:
+            await db.execute("ALTER TABLE shorts ADD COLUMN feed_position REAL DEFAULT 0;")
+            # Backfill existing rows using the unix timestamp of created_at
+            # so their existing order is preserved
+            await db.execute("UPDATE shorts SET feed_position = CAST(strftime('%s', created_at) AS REAL) WHERE feed_position = 0;")
+        except aiosqlite.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise
+
         await db.commit()

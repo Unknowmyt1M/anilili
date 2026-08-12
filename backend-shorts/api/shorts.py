@@ -1,7 +1,8 @@
 import datetime
 import aiosqlite
 from typing import Optional, List
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status, BackgroundTasks
+
 from db.database import get_db
 from db.models import ShortsPage, StreamResponse
 from services import ranker, stream, discovery
@@ -17,26 +18,37 @@ async def get_shorts_feed(
     limit: int = Query(10, ge=1, le=50, description="Page size limit"),
     x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
     x_youtube_api_key: Optional[str] = Header(None, alias="X-YouTube-Api-Key"),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
     db: aiosqlite.Connection = Depends(get_db),
 ):
     """
     Fetches the Anilili Shorts discovery feed with cursor pagination.
-    If DB has no shorts and X-YouTube-Api-Key is provided, triggers initial discovery.
-    If DB has no shorts and no key is provided, returns empty feed ({"items":[], "nextCursor": null}).
+    If DB has fewer items than requested, triggers discovery in background.
     """
+    add_custom_log("INFO", "api", f"[FEED_PAGE_REQUEST] limit={limit} cursor={cursor}")
     page = await ranker.get_ranked_shorts(db=db, cursor=cursor, limit=limit, user_id=x_user_id)
 
-    # If database is empty and YouTube API key is supplied, attempt initial discovery
-    if len(page.items) == 0 and not cursor and x_youtube_api_key:
-        try:
-            await discovery.discover_youtube_shorts(api_key=x_youtube_api_key, db=db, query="anime shorts")
-            page = await ranker.get_ranked_shorts(db=db, cursor=cursor, limit=limit, user_id=x_user_id)
-        except HTTPException:
-            raise
-        except Exception:
-            pass
+    # Check if we need to replenish the feed
+    if len(page.items) < limit:
+        add_custom_log("INFO", "api", f"[FEED_DB_EXHAUSTED] Found {len(page.items)} items, triggering background discovery")
+        page.isReplenishing = True
+        if len(page.items) == 0:
+            # Preserve cursor so client can retry at the same spot after replenishment
+            page.nextCursor = cursor
+
+        # Background discovery
+        background_tasks.add_task(
+            discovery.discover_youtube_shorts,
+            api_key=x_youtube_api_key,
+            db=db,
+            query="anime shorts"
+        )
+        add_custom_log("INFO", "api", "[DISCOVERY_TRIGGERED] Added to background tasks")
+    else:
+        add_custom_log("INFO", "api", "[FEED_NEXT_PAGE_READY] Page full, ready for client")
 
     return page
+
 
 
 @router.get("/{short_id}/stream", response_model=StreamResponse)
