@@ -16,6 +16,10 @@ SINGLE_PASS_FORMAT = (
     "best"
 )
 
+# FIX #8: Increase lock TTL to cover realistic yt-dlp timeout (90s)
+# This prevents duplicate resolution when yt-dlp is slow
+YTDLP_LOCK_TTL_SECONDS = 90
+
 # In-flight task deduplication map: youtube_video_id -> asyncio.Task
 IN_FLIGHT_LOCK = asyncio.Lock()
 IN_FLIGHT_TASKS: Dict[str, asyncio.Task] = {}
@@ -103,7 +107,7 @@ def _run_single_pass_ytdlp(video_id: str) -> Dict[str, Any]:
             if not stream_url:
                 formats = info.get("formats", [])
                 valid_fmts = [
-                    f for f in formats 
+                    f for f in formats
                     if f.get("url") and f.get("ext") != "mhtml" and "storyboard" not in f.get("url", "")
                 ]
                 combined = [f for f in valid_fmts if f.get("vcodec") != "none" and f.get("acodec") != "none"]
@@ -148,32 +152,52 @@ from services.redis_client import redis_client
 async def extract_stream_url_async(video_id: str) -> Dict[str, Any]:
     """
     Deduplicated stream resolution with Upstash Redis cache & locking.
-    1. Checks Upstash Redis stream cache for fast path (< 20ms).
-    2. Uses Redis lock & in-flight Task map to prevent duplicate yt-dlp processes.
+    FIX #8: Proper lock TTL based on yt-dlp timeout (90s).
+    FIX #12: Cache-aware — checks Redis before launching yt-dlp.
+    FIX #9: Always updates Redis after SQLite write (handled in caller).
     """
     if not validate_youtube_id(video_id):
         raise ValueError(f"Invalid YouTube video ID format: {video_id}")
 
-    # Step 1: Upstash Redis Fast Path
+    # FIX #12: Step 1 — Upstash Redis Fast Path (CACHE_HIT)
     cached_redis = await redis_client.get_stream(video_id)
     if cached_redis and not is_stream_expired(cached_redis.get("expires_at")):
-        add_custom_log("INFO", "stream", f"UPSTASH REDIS FAST PATH HIT for video {video_id} < 20ms")
+        add_custom_log("INFO", "stream", f"[CACHE_HIT] UPSTASH REDIS FAST PATH for video {video_id} <20ms")
         return cached_redis
 
-    # Step 2: In-Flight Lock & Deduplication
+    add_custom_log("INFO", "stream", f"[CACHE_MISS] No valid Redis cache for video {video_id} -> resolving")
+
+    # FIX #8: Step 2 — Check Redis lock BEFORE acquiring (LOCK_WAIT path)
     async with IN_FLIGHT_LOCK:
         if video_id in IN_FLIGHT_TASKS:
-            add_custom_log("INFO", "stream", f"DEDUPLICATED: Attaching request for {video_id} to existing task")
+            # FIX #5: Reuse in-flight task — do NOT cancel and recreate
+            add_custom_log("INFO", "stream", f"[LOCK_WAIT] Attaching to existing in-flight task for {video_id}")
             task = IN_FLIGHT_TASKS[video_id]
         else:
-            await redis_client.set_resolution_status(video_id, "RESOLVING", ttl_seconds=120)
-            await redis_client.acquire_resolution_lock(video_id, lock_ttl_seconds=30)
+            # FIX #8: Check Redis distributed lock (for multi-worker safety)
+            lock_acquired = await redis_client.acquire_resolution_lock(
+                video_id, lock_ttl_seconds=YTDLP_LOCK_TTL_SECONDS
+            )
+            if not lock_acquired:
+                # Another worker process already holds the lock — wait for Redis result
+                add_custom_log("INFO", "stream", f"[LOCK_WAIT] Redis lock busy for {video_id} — polling for result")
+                for _ in range(18):  # Poll up to 90s (18 * 5s)
+                    await asyncio.sleep(5)
+                    cached = await redis_client.get_stream(video_id)
+                    if cached and not is_stream_expired(cached.get("expires_at")):
+                        add_custom_log("INFO", "stream", f"[CACHE_HIT] Got result from Redis after waiting for lock on {video_id}")
+                        return cached
+                # Fallback: acquire anyway after timeout
+                add_custom_log("WARNING", "stream", f"Lock wait exhausted for {video_id} — proceeding with own extraction")
+
+            add_custom_log("INFO", "stream", f"[LOCK_ACQUIRED] Starting yt-dlp for {video_id}")
+            await redis_client.set_resolution_status(video_id, "RESOLVING", ttl_seconds=YTDLP_LOCK_TTL_SECONDS)
             task = asyncio.create_task(asyncio.to_thread(_run_single_pass_ytdlp, video_id))
             IN_FLIGHT_TASKS[video_id] = task
 
     try:
         result = await task
-        # Cache successful extraction into Redis
+        # FIX #9: Cache result in Redis immediately after resolution
         ttl = 14400  # Default 4 hours
         exp_iso = result.get("expires_at")
         if exp_iso:
@@ -188,11 +212,13 @@ async def extract_stream_url_async(video_id: str) -> Dict[str, Any]:
 
         await redis_client.set_stream(video_id, result, ttl_seconds=ttl)
         await redis_client.set_resolution_status(video_id, "READY", ttl_seconds=ttl)
+        add_custom_log("INFO", "stream", f"[STREAM_REFRESH] Cached new stream for {video_id} TTL={ttl}s")
         return result
     except Exception as e:
         await redis_client.set_resolution_status(video_id, "FAILED", ttl_seconds=120)
         raise e
     finally:
+        # FIX #8: Release Redis lock only after result is stored
         await redis_client.release_resolution_lock(video_id)
         async with IN_FLIGHT_LOCK:
             if video_id in IN_FLIGHT_TASKS and IN_FLIGHT_TASKS[video_id] == task:
@@ -202,4 +228,3 @@ async def extract_stream_url_async(video_id: str) -> Dict[str, Any]:
 def extract_stream_url(video_id: str) -> Dict[str, Any]:
     """Sync wrapper for legacy calls."""
     return _run_single_pass_ytdlp(video_id)
-

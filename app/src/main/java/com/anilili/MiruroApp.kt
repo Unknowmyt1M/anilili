@@ -25,6 +25,7 @@ import com.anilili.diagnostics.DiagnosticsPerformanceMonitor
 import com.anilili.diagnostics.DiagnosticsSystemMonitor
 import com.anilili.diagnostics.DiagnosticsUploadManager
 import com.anilili.playback.EpisodeDownloads
+import com.anilili.data.remote.AppLogShipper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -84,6 +85,14 @@ class MiruroApp : Application(), ImageLoaderFactory {
         diagnosticsStep("AuthManager.init") { AuthManager.init(this) }
         diagnosticsStep("MalAuthManager.init") { MalAuthManager.init(this, AppGraph.httpClient) }
         diagnosticsStep("SettingsStore.init") { SettingsStore.init(this) }
+        diagnosticsStep("AppLogShipper.init") {
+            // Use a stable Android device ID as the unique user/device identifier
+            @Suppress("HardwareIds")
+            val androidId = android.provider.Settings.Secure.getString(
+                contentResolver, android.provider.Settings.Secure.ANDROID_ID
+            ) ?: "unknown-device"
+            AppLogShipper.init(this, androidId)
+        }
         diagnosticsStep("ReminderManager.init") { ReminderManager.init(this) }
         diagnosticsStep("AutomaticReleaseManager.init") { AutomaticReleaseManager.init(this) }
         diagnosticsStep("AniListNotificationPushManager.init") { AniListNotificationPushManager.init(this) }

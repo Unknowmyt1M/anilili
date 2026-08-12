@@ -1056,6 +1056,9 @@ private fun AppNavHost(
                     onOpenSettings = {
                         nav.navigateTab(Routes.SETTINGS)
                     },
+                    onNavigateToHome = {
+                        nav.navigateTab(Routes.HOME)
+                    },
                 )
             }
             composable(Routes.SETTINGS) {

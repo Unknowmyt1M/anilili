@@ -22,11 +22,16 @@ class ShortsApiClient(
     httpClient: OkHttpClient,
     private val json: Json,
 ) {
+    // FIX #7: Adjusted timeouts to handle yt-dlp latency (~15-30s) without false failures.
+    // connectTimeout: 10s — fast failure on unreachable backend
+    // readTimeout: 45s — yt-dlp resolution can take up to 30s; buffer needed
+    // writeTimeout: 10s — request body writes are always small
+    // callTimeout: 60s — total budget: network + yt-dlp + proxy response start
     private val httpClient: OkHttpClient = httpClient.newBuilder()
-        .connectTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
-        .readTimeout(12, java.util.concurrent.TimeUnit.SECONDS)
-        .writeTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
-        .callTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+        .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(45, java.util.concurrent.TimeUnit.SECONDS)
+        .writeTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+        .callTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
         .build()
 
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()

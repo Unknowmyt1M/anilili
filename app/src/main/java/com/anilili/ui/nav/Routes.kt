@@ -14,7 +14,7 @@ object Routes {
     const val SETTINGS = "settings"
 
     /** Top-level destinations that show the bottom navigation bar. */
-    val tabRoutes = setOf(HOME, SHORTS, SEARCH, SCHEDULE, MORE, SETTINGS)
+    val tabRoutes = setOf(HOME, SEARCH, SCHEDULE, MORE, SETTINGS)
 
     const val NOTIFICATIONS = "notifications"
     const val DOWNLOAD = "download/{downloadId}"

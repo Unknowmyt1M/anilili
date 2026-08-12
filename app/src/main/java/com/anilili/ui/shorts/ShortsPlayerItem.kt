@@ -58,8 +58,9 @@ fun ShortsPlayerItem(
     var isLoading by remember { mutableStateOf(true) }
     var isUnavailable by remember { mutableStateOf(item.isUnavailable) }
     var hasAttemptedRefresh by remember { mutableStateOf(false) }
-    var currentVideoUrl by remember(item.id) { mutableStateOf(item.videoUrl) }
-    var currentStreamType by remember(item.id) { mutableStateOf(item.streamType) }
+
+    val currentVideoUrl = item.videoUrl
+    val currentStreamType = item.streamType
 
     val exoPlayer = remember(context, item.id) {
         ExoPlayer.Builder(context).build().apply {
@@ -86,9 +87,18 @@ fun ShortsPlayerItem(
         }
     }
 
+    // FIX #1: Immediately prepare & start player whenever item.videoUrl arrives (from prefetch or on-demand).
+    // item.videoUrl and item.streamType are plain vals reading directly from the ShortsItem,
+    // so this LaunchedEffect fires the moment the ViewModel pushes a new URL into the StateFlow.
     LaunchedEffect(currentVideoUrl, currentStreamType) {
-        currentVideoUrl?.let { url ->
-            prepareMediaSource(url, currentStreamType)
+        if (!currentVideoUrl.isNullOrBlank()) {
+            // Reset retry flag so the new stream URL can be retried if it also expires
+            hasAttemptedRefresh = false
+            prepareMediaSource(currentVideoUrl, currentStreamType ?: "MP4")
+            // If this Short is already the active one, start playing immediately
+            if (isActive) {
+                exoPlayer.playWhenReady = true
+            }
         }
     }
 
@@ -135,7 +145,7 @@ fun ShortsPlayerItem(
                     isLoading = true
                     onRefreshStream(item.id) { newUrl ->
                         if (!newUrl.isNullOrBlank()) {
-                            currentVideoUrl = newUrl
+                            prepareMediaSource(newUrl, currentStreamType ?: "MP4")
                             exoPlayer.seekTo(0)
                             exoPlayer.playWhenReady = true
                         } else {

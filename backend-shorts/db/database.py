@@ -52,4 +52,20 @@ async def init_db(db_path: str = DATABASE_PATH) -> None:
         );
         """)
 
+        await db.execute("""
+        CREATE TABLE IF NOT EXISTS app_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            device_id TEXT NOT NULL,
+            app_version TEXT,
+            level TEXT NOT NULL,
+            tag TEXT,
+            message TEXT NOT NULL,
+            received_at TEXT NOT NULL
+        );
+        """)
+
+        await db.execute("""
+        CREATE INDEX IF NOT EXISTS idx_app_logs_device ON app_logs (device_id, received_at DESC);
+        """)
+
         await db.commit()
