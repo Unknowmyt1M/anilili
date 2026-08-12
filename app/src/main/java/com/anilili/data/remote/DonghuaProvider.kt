@@ -33,9 +33,9 @@ internal class DonghuaProvider(private val client: OkHttpClient) {
 
     private data class Catalog(val episodes: Map<Int, List<EpisodeLink>>)
 
-    private val catalogs = ConcurrentHashMap<Int, Catalog>()
+    private val catalogs = ConcurrentHashMap<String, Catalog>()
 
-    fun episodeAvailability(media: Media): EpisodeAvailability {
+    fun episodeAvailability(media: Media, siteKey: String = "donghua"): EpisodeAvailability {
         // Fast, non-blocking episode count resolution so Donghua server always appears in the picker
         val count = when {
             media.status == "RELEASING" && media.nextAiringEpisode?.episode != null ->
@@ -48,9 +48,9 @@ internal class DonghuaProvider(private val client: OkHttpClient) {
         return EpisodeAvailability(sub = availableEpisodes, dub = emptySet())
     }
 
-    fun sources(media: Media, audio: String, episode: Int): SourcesResult {
-        val links = catalog(media).episodes[episode]
-            ?: error("Donghua episode $episode is not available in catalog")
+    fun sources(media: Media, audio: String, episode: Int, siteKey: String = "donghua"): SourcesResult {
+        val links = catalog(media, siteKey).episodes[episode]
+            ?: error("Provider $siteKey episode $episode is not available in catalog")
 
         val rawStreams = mapParallel(links, 4, 8000L) { link ->
             runCatching { extractStreamsFromLink(link) }
@@ -59,7 +59,7 @@ internal class DonghuaProvider(private val client: OkHttpClient) {
         }.filterNotNull().flatten()
 
         if (rawStreams.isEmpty()) {
-            error("Donghua episode $episode returned no playable streams")
+            error("Provider $siteKey episode $episode returned no playable streams")
         }
 
         val streams = rawStreams.distinctBy { it.url }
@@ -79,18 +79,19 @@ internal class DonghuaProvider(private val client: OkHttpClient) {
         )
     }
 
-    private fun catalog(media: Media): Catalog {
-        catalogs[media.id]?.let { return it }
+    private fun catalog(media: Media, siteKey: String): Catalog {
+        val cacheKey = "${media.id}_${siteKey.lowercase()}"
+        catalogs[cacheKey]?.let { return it }
 
-        val built = buildCatalog(media)
+        val built = buildCatalog(media, siteKey)
         if (built == null || built.episodes.isEmpty()) {
-            error("Donghua provider has no entry for this title")
+            error("Donghua provider $siteKey has no entry for this title")
         }
-        catalogs[media.id] = built
+        catalogs[cacheKey] = built
         return built
     }
 
-    private fun buildCatalog(media: Media): Catalog? {
+    private fun buildCatalog(media: Media, siteKey: String): Catalog? {
         val rawTitles = mutableListOf<String>()
         media.title.english?.let { rawTitles.add(it) }
         media.title.userPreferred?.let { rawTitles.add(it) }
@@ -117,19 +118,23 @@ internal class DonghuaProvider(private val client: OkHttpClient) {
 
         val episodeMap = HashMap<Int, MutableList<EpisodeLink>>()
 
-        // Query the 4 providers in parallel
-        val tasks = listOf(
-            Callable { searchAnimeStreamSite("AnimeXin", "https://animexin.dev", titles) },
-            Callable { searchAnimeStreamSite("LuciferDonghua", "https://luciferdonghua.in", titles) },
-            Callable { searchAnimeStreamSite("DonghuaStream", "https://donghuastream.org", titles) },
-            Callable { searchAnimeCubeSite(titles) },
-        )
+        val site = siteKey.lowercase()
+        val tasks = ArrayList<Callable<List<Pair<Int, EpisodeLink>>?>>()
+        if (site == "animexin" || site == "donghua") {
+            tasks.add(Callable { searchAnimeStreamSite("AnimeXin", "https://animexin.dev", titles) })
+        }
+        if (site == "luciferdonghua" || site == "donghua") {
+            tasks.add(Callable { searchAnimeStreamSite("LuciferDonghua", "https://luciferdonghua.in", titles) })
+        }
+        if (site == "donghuastream" || site == "donghua") {
+            tasks.add(Callable { searchAnimeStreamSite("DonghuaStream", "https://donghuastream.org", titles) })
+        }
+        if (site == "animecube" || site == "donghua") {
+            tasks.add(Callable { searchAnimeCubeSite(titles) })
+        }
 
-        val executor = Executors.newFixedThreadPool(4)
+        val executor = Executors.newFixedThreadPool(tasks.size.coerceAtLeast(1))
         try {
-            // 25 seconds: each site needs 2 sequential HTTP calls (~5-8s each on mobile).
-            // The outer coroutine withTimeoutOrNull(15s) in AnivexaClient is what the user sees;
-            // we give enough runway here so at least 1-2 sites complete before that fires.
             val futures = executor.invokeAll(tasks, 25, TimeUnit.SECONDS)
             futures.forEach { future ->
                 if (future.isDone && !future.isCancelled) {

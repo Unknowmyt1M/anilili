@@ -140,6 +140,8 @@ import com.anilili.ui.notifications.NotificationsScreen
 import com.anilili.ui.profile.ProfileScreen
 import com.anilili.ui.schedule.ScheduleScreen
 import com.anilili.ui.search.SearchScreen
+import com.anilili.ui.components.ShortsIcon
+import com.anilili.ui.shorts.ShortsScreen
 import com.anilili.ui.settings.SettingsScreen
 import com.anilili.ui.settings.UpdatePromptHost
 import com.anilili.ui.theme.MiruroTheme
@@ -379,6 +381,7 @@ private enum class Tab(
     val icon: ImageVector,
 ) {
     HOME(Routes.HOME, "Home", "Inicio", Icons.Default.Home),
+    SHORTS(Routes.SHORTS, "Shorts", "Shorts", ShortsIcon),
     SEARCH(Routes.SEARCH, "Search", "Buscar", Icons.Default.Search),
     SCHEDULE(Routes.SCHEDULE, "Schedule", "Calendario", Icons.Default.DateRange),
     MORE(Routes.MORE, "Library", "Biblioteca", Icons.AutoMirrored.Filled.List),
@@ -987,6 +990,7 @@ private fun AppNavHost(
                         else nav.navigate(Routes.genreSearch(genre)) { launchSingleTop = true }
                     },
                     onNotificationsClick = { nav.navigate(Routes.NOTIFICATIONS) { launchSingleTop = true } },
+                    onShortsClick = { nav.navigateTab(Routes.SHORTS) },
                     tvPrimaryFocusTarget = tvHomePrimaryFocusTarget,
                 )
             }
@@ -1038,6 +1042,19 @@ private fun AppNavHost(
                     },
                     onPlayDownload = { downloadId ->
                         nav.navigate(Routes.download(downloadId))
+                    },
+                )
+            }
+            composable(Routes.SHORTS) {
+                LaunchedEffect(Unit) { DiagnosticsLog.event("Route SHORTS content entered") }
+                ShortsScreen(
+                    onWatchAnime = { id, ep ->
+                        val preferDub = SettingsStore.preferDub.value
+                        val category = if (preferDub) "dub" else "sub"
+                        nav.navigate(Routes.watch(id, provider = "auto", category = category, episode = ep.toString()))
+                    },
+                    onOpenSettings = {
+                        nav.navigateTab(Routes.SETTINGS)
                     },
                 )
             }

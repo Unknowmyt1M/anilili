@@ -246,6 +246,13 @@ object SettingsStore {
      */
     private val _preferredProvider = MutableStateFlow(DEFAULT_PREFERRED_PROVIDER)
     val preferredProvider = _preferredProvider.asStateFlow()
+
+    private val _youtubeApiKey = MutableStateFlow("")
+    val youtubeApiKey = _youtubeApiKey.asStateFlow()
+
+    private val _shortsApiUrl = MutableStateFlow(defaultShortsApiUrl())
+    val shortsApiUrl = _shortsApiUrl.asStateFlow()
+
     private val loaded = MutableStateFlow(false)
 
     fun init(context: Context) {
@@ -334,6 +341,18 @@ object SettingsStore {
     fun setMenuLanguage(value: MenuLanguage) {
         _menuLanguage.value = value
         scope.launch { store.edit { it[MENU_LANGUAGE] = value.storedValue } }
+    }
+
+    fun setYoutubeApiKey(value: String) {
+        _youtubeApiKey.value = value.trim()
+        scope.launch { store.edit { it[YOUTUBE_API_KEY] = value.trim() } }
+    }
+
+    fun setShortsApiUrl(value: String) {
+        val trimmed = value.trim()
+        val finalUrl = trimmed.ifBlank { defaultShortsApiUrl() }
+        _shortsApiUrl.value = finalUrl
+        scope.launch { store.edit { it[SHORTS_API_URL] = finalUrl } }
     }
     /** Normalises, de-duplicates and caps a priority list, then mirrors the head into [preferredProvider]. */
     private fun applyServerPriority(value: List<String>) {
@@ -445,6 +464,8 @@ object SettingsStore {
         )
         _playerGestures.value = prefs[PLAYER_GESTURES] ?: true
         _lastWorkingPipeOrigin.value = prefs[LAST_PIPE_ORIGIN].orEmpty()
+        _youtubeApiKey.value = prefs[YOUTUBE_API_KEY].orEmpty()
+        _shortsApiUrl.value = prefs[SHORTS_API_URL]?.takeIf { it.isNotBlank() } ?: defaultShortsApiUrl()
         loaded.value = true
     }
 
@@ -493,7 +514,20 @@ object SettingsStore {
     private val SERVER_PRIORITY = stringPreferencesKey("server_priority")
     private val LAST_PIPE_ORIGIN = stringPreferencesKey("last_pipe_origin")
     private val PLAYER_GESTURES = booleanPreferencesKey("player_gestures")
+    private val YOUTUBE_API_KEY = stringPreferencesKey("youtube_api_key")
+    private val SHORTS_API_URL = stringPreferencesKey("shorts_api_url")
     private val MIGRATED = booleanPreferencesKey("migrated_from_shared_preferences")
+}
+
+private fun defaultShortsApiUrl(): String {
+    val fingerprint = android.os.Build.FINGERPRINT?.lowercase() ?: ""
+    val model = android.os.Build.MODEL?.lowercase() ?: ""
+    val hardware = android.os.Build.HARDWARE?.lowercase() ?: ""
+    return if (fingerprint.contains("generic") || fingerprint.contains("emulator") || model.contains("emulator") || hardware.contains("goldfish") || hardware.contains("ranchu")) {
+        "http://10.0.2.2:8000"
+    } else {
+        "http://127.0.0.1:8000"
+    }
 }
 
 internal fun encodePersistentCaptionDelays(delays: Map<Int, Long>): String = delays

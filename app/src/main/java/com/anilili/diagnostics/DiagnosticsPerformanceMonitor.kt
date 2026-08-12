@@ -94,11 +94,18 @@ object DiagnosticsPerformanceMonitor {
                 "processCpuPercent" to (cpuDelta * 100.0 / wallDelta),
                 "activeThreadsApprox" to Thread.activeCount(),
                 "thermalStatus" to if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    power?.currentThermalStatus ?: -1
+                    ThermalApi29Helper.getThermalStatus(power)
                 } else {
                     -1
                 },
             ),
         )
+    }
+}
+
+@androidx.annotation.RequiresApi(Build.VERSION_CODES.Q)
+private object ThermalApi29Helper {
+    fun getThermalStatus(power: PowerManager?): Int {
+        return power?.currentThermalStatus ?: -1
     }
 }

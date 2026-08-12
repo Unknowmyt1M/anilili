@@ -561,7 +561,7 @@ object DiagnosticsLog {
             "batteryCharging" to batteryCharging(battery).toString(),
             "batteryTemperatureC" to ((battery?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) ?: 0) / 10f).toString(),
             "thermalStatus" to if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                power?.currentThermalStatus?.toString() ?: "unknown"
+                ThermalLogApi29Helper.getThermalStatus(power)
             } else {
                 "unavailable"
             },
@@ -923,5 +923,12 @@ object DiagnosticsLog {
         putNextEntry(ZipEntry(name))
         file.inputStream().use { it.copyTo(this) }
         closeEntry()
+    }
+}
+
+@androidx.annotation.RequiresApi(Build.VERSION_CODES.Q)
+private object ThermalLogApi29Helper {
+    fun getThermalStatus(power: PowerManager?): String {
+        return power?.currentThermalStatus?.toString() ?: "unknown"
     }
 }

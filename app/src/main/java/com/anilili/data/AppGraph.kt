@@ -9,6 +9,8 @@ import com.anilili.data.remote.JikanClient
 import com.anilili.data.remote.KonohaClient
 import com.anilili.data.remote.MalClient
 import com.anilili.data.remote.PipeClient
+import com.anilili.data.remote.ShortsApiClient
+import com.anilili.data.remote.ShortsRepository
 import com.anilili.diagnostics.DiagnosticsHttpEventListener
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
@@ -25,6 +27,12 @@ object AppGraph {
         private set
     lateinit var httpClient: OkHttpClient
         private set
+    lateinit var json: Json
+        private set
+    lateinit var shortsApiClient: ShortsApiClient
+        private set
+    lateinit var shortsRepository: ShortsRepository
+        private set
 
     /** TV boxes are memory/CPU-starved; non-UI layers use this to throttle background work. */
     var isTv: Boolean = false
@@ -36,7 +44,7 @@ object AppGraph {
         isTv = (context.getSystemService(Context.UI_MODE_SERVICE) as? android.app.UiModeManager)
             ?.currentModeType == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
 
-        val json = Json {
+        json = Json {
             ignoreUnknownKeys = true
             isLenient = true
             coerceInputValues = true
@@ -51,6 +59,9 @@ object AppGraph {
             .callTimeout(45, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
             .build()
+
+        shortsApiClient = ShortsApiClient(httpClient, json)
+        shortsRepository = ShortsRepository(shortsApiClient)
 
         val aniList = AniListClient(httpClient, json)
         val cache = AppCache(context, json)

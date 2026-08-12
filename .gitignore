@@ -44,3 +44,14 @@ showcase/mobile/*
 !showcase/tv/
 showcase/tv/*
 !showcase/tv/*.webp
+
+# Backend DB, logs & dotenv
+*.db
+*.log
+.env
+.agents/
+scratch/
+backend-shorts/__pycache__/
+backend-shorts/*.db
+backend-shorts/.env
+

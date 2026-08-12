@@ -126,6 +126,7 @@ fun HomeScreen(
     onSearchClick: () -> Unit,
     onGenreClick: (String?) -> Unit,
     onNotificationsClick: () -> Unit,
+    onShortsClick: (() -> Unit)? = null,
     tvPrimaryFocusTarget: TvFocusTarget? = null,
     modifier: Modifier = Modifier,
     vm: HomeViewModel = viewModel(),
@@ -282,6 +283,7 @@ fun HomeScreen(
                     onWatchNow = onWatchNow,
                     onResume = onResume,
                     onGenreClick = onGenreClick,
+                    onShortsClick = { onShortsClick?.invoke() },
                     contentPadding = padding,
                 )
             }
@@ -342,6 +344,7 @@ private fun HomeContent(
     onAnimeClick: (Int) -> Unit,
     onWatchNow: (Int) -> Unit,
     onResume: (HistoryEntry) -> Unit,
+    onShortsClick: () -> Unit,
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(),
 ) {
@@ -406,6 +409,9 @@ private fun HomeContent(
                 }
                 if (history.isNotEmpty()) {
                     item { ContinueRail(history.take(12), onResume, continueFocusRequester) }
+                }
+                item {
+                    TrendingShortsRail(onShortsClick = onShortsClick)
                 }
                 item {
                     HomeCatalogTabs(
@@ -1152,6 +1158,90 @@ private fun ContinueRail(
                     }
                     Text(entry.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
                     Text("Episode ${entry.episodeLabel}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TrendingShortsRail(
+    onShortsClick: () -> Unit,
+) {
+    val device = LocalAppDeviceProfile.current
+    val cardWidth = if (device.isTv) 140.dp else 120.dp
+    val cardHeight = if (device.isTv) 220.dp else 190.dp
+
+    Column(modifier = Modifier.padding(top = 10.dp, bottom = 4.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = device.pagePadding),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = com.anilili.ui.components.ShortsIcon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(22.dp),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Trending Shorts & Clips",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            TextButton(onClick = onShortsClick) {
+                Text("View Feed", fontWeight = FontWeight.Bold)
+            }
+        }
+
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = device.pagePadding, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            items(6) { index ->
+                Box(
+                    modifier = Modifier
+                        .width(cardWidth)
+                        .height(cardHeight)
+                        .focusHighlight(RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .clickable { onShortsClick() },
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    0.4f to Color.Transparent,
+                                    1f to Color.Black.copy(alpha = 0.85f),
+                                ),
+                            ),
+                    )
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = "Play Short",
+                        tint = Color.White,
+                        modifier = Modifier
+                            .size(36.dp)
+                            .align(Alignment.Center),
+                    )
+                    Text(
+                        text = "Anime Shorts Feed",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(8.dp),
+                    )
                 }
             }
         }

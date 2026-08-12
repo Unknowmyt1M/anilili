@@ -206,7 +206,7 @@ class AnivexaClient(
             "animekai" -> runInterruptible(Dispatchers.IO) { animeKai.sources(media, request.audio, request.episode) }
             "kaa" -> runInterruptible(Dispatchers.IO) { kickAssAnime.sources(media, request.audio, request.episode) }
             "rareanimes" -> runInterruptible(Dispatchers.IO) { rareAnimes.sources(media, request.audio, request.episode) }
-            "donghua" -> runInterruptible(Dispatchers.IO) { donghua.sources(media, request.audio, request.episode) }
+            "donghua", "animexin", "luciferdonghua", "donghuastream", "animecube" -> runInterruptible(Dispatchers.IO) { donghua.sources(media, request.audio, request.episode, request.provider) }
             "reanime" -> reanime(media, request.audio, request.episode)
             "anizone" -> anizone(media, request.episode)
             "animegg" -> animegg(media, request.audio, request.episode)
@@ -245,7 +245,7 @@ class AnivexaClient(
         "animekai" -> runInterruptible(Dispatchers.IO) { animeKai.episodeAvailability(media) }
         "kaa" -> runInterruptible(Dispatchers.IO) { kickAssAnime.episodeAvailability(media) }
         "rareanimes" -> runInterruptible(Dispatchers.IO) { rareAnimes.episodeAvailability(media) }
-        "donghua" -> runInterruptible(Dispatchers.IO) { donghua.episodeAvailability(media) }
+        "donghua", "animexin", "luciferdonghua", "donghuastream", "animecube" -> runInterruptible(Dispatchers.IO) { donghua.episodeAvailability(media, provider) }
         "reanime" -> reanimeAvailability(media)
         "anizone" -> anizoneAvailability(media, count)
         "animegg" -> animeGgAvailability(media)

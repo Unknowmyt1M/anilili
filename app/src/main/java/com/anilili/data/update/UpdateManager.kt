@@ -68,6 +68,7 @@ object UpdateManager {
 
     /** Throttled startup check; only surfaces a prompt when an update exists. */
     fun autoCheckIfDue(context: Context) {
+        if (BuildConfig.DEBUG) return
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         if (System.currentTimeMillis() - prefs.getLong(KEY_LAST_CHECK, 0L) < CHECK_INTERVAL_MS) return
         check(context, manual = false)

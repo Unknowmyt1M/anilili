@@ -1,5 +1,9 @@
 package com.anilili.ui.settings
 
+import com.anilili.R
+import com.anilili.BuildConfig
+import com.anilili.data.AppGraph
+import com.anilili.data.remote.ConnectionStatus
 import android.Manifest
 import android.content.Context
 import android.content.Intent
@@ -11,36 +15,44 @@ import android.text.format.Formatter
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.ui.res.painterResource
-import com.anilili.R
-import com.anilili.BuildConfig
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ClosedCaption
+import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.RecordVoiceOver
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.SystemUpdate
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material.icons.filled.Upload
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -65,7 +77,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -146,6 +160,8 @@ fun SettingsScreen(
     val updateCheckOnLaunch by SettingsStore.updateCheckOnLaunch.collectAsState()
     val syncSavedToAniList by SettingsStore.syncSavedToAniList.collectAsState()
     val menuLanguage by SettingsStore.menuLanguage.collectAsState()
+    val youtubeApiKey by SettingsStore.youtubeApiKey.collectAsState()
+    val shortsApiUrl by SettingsStore.shortsApiUrl.collectAsState()
     val updateState by UpdateManager.state.collectAsState()
     val profile = (profileState as? UiState.Success<AniListProfile>)?.data
     val scope = rememberCoroutineScope()
@@ -519,6 +535,21 @@ fun SettingsScreen(
                 ServerPrioritySetting(
                     priority = serverPriority,
                     onChange = SettingsStore::setServerPriority,
+                )
+            }
+            }
+
+            settingsSection(
+                title = "Shorts & YouTube",
+                expanded = "Shorts & YouTube" in expandedSections,
+                onToggle = { toggleSection("Shorts & YouTube") },
+            ) {
+            item {
+                ShortsSettingsSection(
+                    youtubeApiKey = youtubeApiKey,
+                    shortsApiUrl = shortsApiUrl,
+                    onApiKeyChange = SettingsStore::setYoutubeApiKey,
+                    onApiUrlChange = SettingsStore::setShortsApiUrl,
                 )
             }
             }
@@ -934,6 +965,204 @@ private fun ServerPrioritySetting(
                 modifier = Modifier.focusHighlight(RoundedCornerShape(20.dp)),
             ) {
                 Text("Clear")
+            }
+        }
+    }
+}
+
+@Composable
+private fun ShortsSettingsSection(
+    youtubeApiKey: String,
+    shortsApiUrl: String,
+    onApiKeyChange: (String) -> Unit,
+    onApiUrlChange: (String) -> Unit,
+) {
+    var keyText by remember(youtubeApiKey) { mutableStateOf(youtubeApiKey) }
+    var urlText by remember(shortsApiUrl) { mutableStateOf(shortsApiUrl) }
+
+    val scope = rememberCoroutineScope()
+    var connectionStatus by remember { mutableStateOf<ConnectionStatus?>(null) }
+    var isTesting by remember { mutableStateOf(false) }
+
+    fun testConnectionNow(url: String, key: String) {
+        val cleanUrl = url.trim()
+        val cleanKey = key.trim()
+        if (cleanUrl.isBlank()) {
+            connectionStatus = ConnectionStatus(isConnected = false, message = "Shorts API URL is empty.")
+            return
+        }
+        isTesting = true
+        connectionStatus = null
+        scope.launch {
+            val res = AppGraph.shortsRepository.testConnection(cleanUrl, cleanKey)
+            isTesting = false
+            connectionStatus = res
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        if (shortsApiUrl.isNotBlank()) {
+            testConnectionNow(shortsApiUrl, youtubeApiKey)
+        }
+    }
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column {
+            Text(
+                "YouTube Data API Key",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+            )
+            Text(
+                "Required for discovering anime Shorts. Saved only on this device.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp, bottom = 6.dp),
+            )
+            androidx.compose.material3.OutlinedTextField(
+                value = keyText,
+                onValueChange = { keyText = it },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                placeholder = { Text("AIzaSy...") },
+                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+            )
+        }
+
+        Column {
+            Text(
+                "Shorts API Service URL",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+            )
+            Text(
+                "Endpoint of your Anilili Shorts backend service (default http://10.0.2.2:8000 on emulator).",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp, bottom = 6.dp),
+            )
+            androidx.compose.material3.OutlinedTextField(
+                value = urlText,
+                onValueChange = { urlText = it },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                placeholder = { Text("http://10.0.2.2:8000") },
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Button(
+                onClick = {
+                    val cleanKey = keyText.trim()
+                    val cleanUrl = urlText.trim()
+                    onApiKeyChange(cleanKey)
+                    onApiUrlChange(cleanUrl)
+                    testConnectionNow(cleanUrl, cleanKey)
+                },
+                enabled = !isTesting,
+                shape = RoundedCornerShape(20.dp),
+                modifier = Modifier.focusHighlight(RoundedCornerShape(20.dp)),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Save,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(if (isTesting) "Testing..." else "Apply & Test Connection")
+            }
+        }
+
+        val currentStatus = connectionStatus
+        when {
+            isTesting -> {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        "Testing connection to backend service...",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            currentStatus != null -> {
+                val isOk = currentStatus.isConnected
+                val bgColor = if (isOk) Color(0xFF1B5E20).copy(alpha = 0.25f) else Color(0xFFB71C1C).copy(alpha = 0.25f)
+                val textColor = if (isOk) Color(0xFF81C784) else Color(0xFFE57373)
+                val icon = if (isOk) Icons.Default.CheckCircle else Icons.Default.Error
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(bgColor)
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = textColor,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = if (isOk) "Connected" else "Disconnected",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = textColor,
+                        )
+                        Text(
+                            text = currentStatus.message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = textColor.copy(alpha = 0.9f),
+                        )
+                    }
+                }
+            }
+            keyText.isBlank() || urlText.isBlank() -> {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "Enter API Key & Shorts API URL above, then tap Apply.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }

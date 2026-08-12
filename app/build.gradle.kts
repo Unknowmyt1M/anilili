@@ -35,7 +35,7 @@ android {
     buildToolsVersion = "35.0.1"
 
     defaultConfig {
-        applicationId = "com.miruronative"
+        applicationId = "com.anilili"
         // Fire OS 5 devices (including the 1st/2nd-gen Fire TV Sticks) report API 22.
         minSdk = 22
         targetSdk = 36

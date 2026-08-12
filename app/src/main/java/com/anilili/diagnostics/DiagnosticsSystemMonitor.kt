@@ -51,13 +51,21 @@ object DiagnosticsSystemMonitor {
     }
 
     private fun installThermalMonitor(context: Context) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
-        val manager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return
-        runCatching {
-            manager.addThermalStatusListener { status ->
-                DiagnosticsLog.event("system", "thermal.changed", mapOf("status" to status))
-            }
-        }.onFailure { DiagnosticsLog.throwable("thermal monitor unavailable", it) }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ThermalApi29.install(context)
+        }
+    }
+
+    @androidx.annotation.RequiresApi(Build.VERSION_CODES.Q)
+    private object ThermalApi29 {
+        fun install(context: Context) {
+            val manager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return
+            runCatching {
+                manager.addThermalStatusListener { status ->
+                    DiagnosticsLog.event("system", "thermal.changed", mapOf("status" to status))
+                }
+            }.onFailure { DiagnosticsLog.throwable("thermal monitor unavailable", it) }
+        }
     }
 
     private fun transport(capabilities: NetworkCapabilities): String = when {
