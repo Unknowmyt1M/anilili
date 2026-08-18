@@ -2,198 +2,257 @@
 
 ## Mission
 
-Work directly on the current `anilili` repository and implement a **production-quality backend execution-trace/logging system** so that when any backend operation fails, especially AnimeXIn scraping, provider resolution, playback URL extraction, metadata extraction, or `yt-dlp` processing, we can see **exactly what happened from the first step to the final failure/success**.
+Work directly on the current `anilili` repository and implement a **production-quality backend execution-trace/logging system** for the current debug/development build.
 
 This is an implementation task, not a request for a plan. **Inspect the entire repository first, understand the current architecture and existing logging/API/storage implementation, then implement the solution in the architecture that best fits the codebase. Do not blindly follow a predefined implementation.**
 
-The frontend does NOT need to be modified in this task. The backend must expose enough detailed information so a Logs/Debug UI can be added later without redesigning the backend logging system.
+The goal is simple: when something fails anywhere in the backend, especially AnimeXIn scraping, provider resolution, metadata extraction, playable URL extraction, `yt-dlp`, Shorts discovery/feed replenishment, or playback URL refresh, we must be able to follow the complete real execution path from the first event to the final success/failure.
+
+The app is currently in debug mode, so detailed A→Z diagnostic logging is intentionally required.
 
 ---
 
-## Current Context
+# 1. FIRST: FULL REPOSITORY INSPECTION
 
-The app is currently in **debug/development mode**, so detailed backend logs are intentionally required. The purpose is to diagnose real failures such as:
-
-- AnimeXIn provider failing while the UI only shows a generic failure.
-- Anime/episode scraping succeeding partially but failing at a later provider step.
-- `yt-dlp` extraction failing or returning incomplete formats.
-- Playable URL extraction/refresh failing.
-- Shorts discovery/feed replenishment failures.
-- Metadata extraction failures.
-- HTTP/network failures, retries, parser failures, timeouts, subprocess failures, and unexpected exceptions.
-
-The current problem is that the application can show a failure, but the available logs do not reveal the complete execution path. Fix that at the backend level.
-
----
-
-# 1. First: Fully Inspect the Existing Repository
-
-Before changing anything:
+Before modifying code:
 
 1. Inspect the complete repository structure.
-2. Identify the backend entry point(s).
-3. Identify the existing logger implementation.
-4. Identify existing `/api/app-logs` or equivalent logging endpoints.
-5. Identify current log storage/in-memory mechanisms.
-6. Identify all scraping/provider services.
-7. Identify AnimeXIn scraping code.
-8. Identify `yt-dlp` invocation and extraction code.
-9. Identify all metadata-fetching code.
-10. Identify video/playable URL extraction and refresh code.
-11. Identify Playwright/browser automation, if present.
-12. Identify Shorts discovery/feed services.
-13. Identify retry/fallback mechanisms.
-14. Identify all relevant dependencies already present.
-15. Inspect tests and deployment configuration.
+2. Identify all backend entry points.
+3. Identify the existing logger and logging helpers.
+4. Identify existing `/api/app-logs`, `/api/app-logs/devices`, `/app_logs`, or equivalent endpoints.
+5. Identify how server logs are currently produced/stored.
+6. Identify how app/client logs are currently received/stored.
+7. Identify whether **server logs and app logs currently use separate storage, endpoints, pages, or models**.
+8. Identify AnimeXIn scraping/provider code.
+9. Identify metadata-fetching code and its current dependencies.
+10. Identify `yt-dlp` invocation and extraction code.
+11. Identify playable URL extraction/refresh code.
+12. Identify Playwright/browser automation if present.
+13. Identify Shorts feed, ranking, discovery, prefetch, cursor, and replenishment code.
+14. Identify retry/fallback logic.
+15. Inspect tests, dependency files, environment configuration, and deployment configuration.
 
-**Do not replace working infrastructure unnecessarily. Reuse compatible existing components where appropriate, but redesign weak logging/trace plumbing if necessary.**
+Do not replace working infrastructure unnecessarily. Reuse compatible existing components where appropriate, but redesign weak logging/trace plumbing if the current design cannot provide the required observability.
 
-Do not introduce a completely unrelated logging framework merely because it is convenient. Prefer the existing stack unless the existing implementation genuinely cannot support the required behavior.
+Do not introduce a completely unrelated logging framework merely for convenience. Prefer the existing stack unless it genuinely cannot satisfy these requirements.
 
 ---
 
-# 2. Core Requirement: A→Z Execution Trace
+# 2. CRITICAL REQUIREMENT — ONE UNIFIED LOG STREAM
 
-Every important backend operation must produce a complete execution trace.
+## Server logs and App logs MUST be shown as ONE logical log stream
 
-A log should not merely say:
+The current backend has **server logs** and **app logs** appearing separately. This makes debugging extremely difficult because a single user action can produce events in both systems and there is no reliable chronological view of the complete operation.
 
-> AnimeXIn failed
+**Fix this at the backend/logging architecture level.**
 
-It should allow us to determine something like:
+The final backend must expose a **single unified chronological log stream** containing both:
+
+- backend/server-generated logs
+- application/client-generated logs received through the app-log API
+
+They must be merged into the same logical history using a common event schema.
+
+### Important
+
+Do NOT simply create another page or tell the frontend to make two API calls and visually place two lists together.
+
+The backend must provide a unified source of truth so a future/current Logs page can request one stream and see both types of events chronologically.
+
+For example:
 
 ```text
-Operation started
-→ request received
-→ target URL normalized
-→ HTTP request started
-→ response received
-→ status = 200
-→ HTML parsed
-→ selector X attempted
-→ selector X matched
-→ title extracted
-→ poster extracted
-→ description extracted
-→ episode list located
-→ episode 1 URL extracted
-→ provider detected
-→ provider page requested
-→ embed detected
-→ player initialized
-→ stream extraction started
-→ candidate streams found
-→ playable URL validation started
-→ validation failed
-→ fallback provider attempted
-→ fallback failed
-→ final error returned
+10:00:01.100  SERVER  operation=abc  GET /episode/123 started
+10:00:01.180  SERVER  operation=abc  AnimeXIn request started
+10:00:01.450  SERVER  operation=abc  AnimeXIn response 200
+10:00:01.500  SERVER  operation=abc  episode parser started
+10:00:01.620  APP     operation=abc  player screen opened
+10:00:01.800  SERVER  operation=abc  provider=AnimeXIn selected
+10:00:02.100  SERVER  operation=abc  playable URL extraction started
+10:00:02.300  APP     operation=abc  playback loading
+10:00:03.000  SERVER  operation=abc  provider extraction failed
+10:00:03.010  SERVER  operation=abc  fallback provider started
+10:00:03.500  SERVER  operation=abc  final failure
 ```
 
-The exact steps must come from the actual implementation. **Do not invent fake logs. Every log must correspond to a real operation/event.**
+The exact events must come from real execution. **Never fabricate logs.**
+
+### Preserve source information
+
+Even though the streams are unified, each event should retain a `source`/`origin` field such as:
+
+- `server`
+- `app`
+- `system`
+- `worker`
+- another real source present in the repository
+
+This is for diagnostics and future filtering only. It must NOT split the actual chronological stream.
 
 ---
 
-# 3. No Artificial Log Categorization
+# 3. ONE COMMON EVENT MODEL
 
-Do NOT create an overly restrictive category system that hides useful information.
+Create or extend the existing log event model so server and app logs can coexist.
 
-The requirement is **full chronological execution visibility**.
+A useful event should support fields such as:
 
-You may use structured fields internally (operation ID, timestamp, service, etc.) for filtering and correlation, but the raw chronological event stream must remain complete.
+- timestamp
+- source/origin
+- level
+- operation_id / trace_id
+- parent_operation_id when applicable
+- request_id when applicable
+- device/session identifier when available and safe
+- HTTP method
+- endpoint/path
+- service/component
+- step/event name
+- human-readable message
+- structured details
+- duration/elapsed time
+- status code
+- retry number
+- exception type
+- exception message
+- traceback
+- relevant result information
 
-A developer should be able to follow one operation from beginning to end without needing to guess which category contains the missing event.
+Do not force every event to populate every field. Store what is actually available.
+
+The raw chronological event stream must remain complete even if filtering/grouping is added later.
 
 ---
 
-# 4. Operation / Trace IDs
+# 4. OPERATION / TRACE IDs
 
-Introduce a correlation mechanism if one does not already exist.
-
-Each meaningful backend request/operation should have a unique `operation_id` / `trace_id`.
+Every meaningful backend operation must have a unique correlation ID.
 
 Examples:
 
 - anime metadata request
-- episode scraping request
+- anime detail scraping
+- episode scraping
 - provider resolution
 - playable URL extraction
+- playback URL refresh
 - `yt-dlp` extraction
 - Shorts feed request
-- Shorts discovery job
-- playback URL refresh
+- Shorts discovery
+- feed replenishment
+- background job
 
-Nested operations should retain the parent operation ID or have a clear parent-child relationship.
+Nested operations must retain the parent operation ID or have a clear parent-child relationship.
 
-This is essential because multiple requests/jobs can run concurrently.
+When an app/client log belongs to an operation initiated by the backend, associate it with the same operation/trace ID whenever the current architecture allows it.
+
+If the app cannot currently know the server's operation ID, preserve the app event and use request/session/device correlation where available rather than dropping it.
+
+Do not rely on timestamps alone to correlate concurrent operations.
 
 ---
 
-# 5. Log Every Real Backend Step
+# 5. A→Z EXECUTION TRACE
 
-For each operation, capture as much of the following as is actually available:
+Every important backend operation must produce a complete real execution trace.
+
+A useful trace should make it possible to understand something like:
+
+```text
+request received
+→ operation created
+→ input validated
+→ URL normalized
+→ HTTP request started
+→ response received
+→ response status checked
+→ HTML parsed
+→ selectors attempted
+→ metadata extracted
+→ episode list found
+→ provider detected
+→ provider request started
+→ embed discovered
+→ stream extraction started
+→ candidates found
+→ playable URL validation
+→ selected stream
+→ response returned
+```
+
+The actual trace must reflect what the code really did.
+
+Do not add fake progress messages such as `processing...` unless they correspond to a real operation.
+
+---
+
+# 6. LOG EVERY REAL BACKEND STEP
+
+For applicable operations capture:
 
 - timestamp
+- source
 - operation/trace ID
-- parent operation ID when applicable
-- request ID when applicable
-- HTTP method
-- endpoint/path
-- source/client when known
+- parent operation ID
+- request ID
+- HTTP method/path
+- client/device information when available
 - target URL/domain
 - operation start/end
-- elapsed time/duration
-- step name/message
-- relevant input parameters
+- duration
+- exact step/message
+- relevant input
 - relevant output/result
-- HTTP status
-- response size when available
+- status code
+- response size
 - retry number
 - timeout information
-- selected provider
+- provider selected
 - fallback provider
 - parser/selector attempted
-- extracted IDs
-- extracted metadata
-- number of results found
-- number of candidates found
+- IDs extracted
+- metadata fields extracted
+- candidate count
 - validation result
-- subprocess status
+- subprocess state
 - subprocess exit code
 - stdout/stderr where applicable
 - exception type
 - exception message
 - complete traceback for unexpected exceptions
 
-Do not log meaningless noise solely for the sake of volume. The requirement is **complete execution visibility**, not random spam.
+Do not create useless spam. The requirement is **complete execution visibility**, not random high-volume logging.
 
 ---
 
-# 6. AnimeXIn Scraping — Extremely Detailed Logging
+# 7. ANIMEXIN — EXTREMELY DETAILED TRACE
 
-AnimeXIn is one of the main failure points and must be fully traceable.
+AnimeXIn is a major failure point. Instrument every real stage.
 
-Instrument every actual stage, including where applicable:
+### Request stage
 
-### Request
+Log, where applicable:
 
-- incoming API request
+- incoming request
 - target AnimeXIn URL
 - URL normalization
-- HTTP client initialization
+- HTTP client creation/configuration
 - request start
 - request completion
 - status code
-- response headers relevant to debugging
+- relevant response headers
 - response size
-- timeout/retry
+- timeout
+- retry number/reason
 
-### Page Parsing
+### Parsing stage
+
+Log:
 
 - HTML parsing start/end
 - parser used
-- selectors attempted
-- selectors matched/not matched
+- every meaningful selector/parser step
+- selector matched/not matched
 - number of elements found
 - title extraction
 - poster extraction
@@ -201,53 +260,53 @@ Instrument every actual stage, including where applicable:
 - anime ID/slug extraction
 - episode list extraction
 - episode count
-- individual episode URL extraction
+- episode URL extraction
 
-### Provider Resolution
+### Provider stage
 
 For every provider actually encountered:
 
 - provider detected
 - provider URL
-- provider request started/completed
+- provider request start/end
 - response status
 - parser stage
-- embed URL discovery
+- embed discovery
 - video ID extraction
 - player/API endpoint discovery
-- token/signature extraction if applicable
+- token/signature discovery if applicable
 - candidate stream discovery
 - playable URL extraction
 - playable URL validation
 - final provider result
 
-If AnimeXIn fails, the log must identify **the exact stage and reason**.
+If AnimeXIn fails, logs MUST identify the exact stage and actual reason.
 
-Do not simply catch the exception and log `AnimeXIn failed`.
+Do not collapse everything into `AnimeXIn failed`.
 
 ---
 
-# 7. yt-dlp — FULL DEBUG TRACE
+# 8. yt-dlp — FULL REAL DEBUG TRACE
 
-`yt-dlp` is a critical component. Instrument its real execution thoroughly.
+`yt-dlp` is critical. Instrument its actual execution without creating a second incompatible implementation.
 
-Whenever `yt-dlp` is used, capture:
+Whenever `yt-dlp` is used, capture as applicable:
 
 - extraction start
 - target URL
-- extractor selection/detection
-- command/options actually used
+- extractor detection/selection
+- options actually used
 - process start
-- process PID if available
+- PID if available
 - stdout
 - stderr
 - warnings
 - extractor messages
-- network/request failures
+- network failures
 - retry attempts
 - format discovery
-- number of formats discovered
-- every available format returned by the current implementation
+- number of formats
+- **all formats returned by the existing implementation**
 - format IDs
 - extensions
 - codecs
@@ -260,29 +319,299 @@ Whenever `yt-dlp` is used, capture:
 - playable URL extraction
 - URL expiry information when available
 - final extraction result
-- process exit code
-- total duration
+- exit code
+- duration
 - exception + traceback on failure
 
-### Important
+### Mandatory dependency preservation
 
-Do not create a second incompatible `yt-dlp` implementation merely for logging.
+Use the **same existing `yt-dlp` dependency/version and extraction mechanism already present in the repository**.
 
-**Use the exact existing `yt-dlp` dependency/version and existing extraction mechanism already present in this repository.**
+Do not replace it merely to make logging easier.
 
-Preserve all currently supported formats and extraction behavior.
+Preserve the existing behavior for all available quality/playable URLs.
 
-If the current code already extracts all available playable quality URLs, preserve that behavior and make the logs expose the complete result.
+If the existing implementation already extracts multiple playable qualities, keep that behavior and expose the result through logs.
 
-Do not silently downgrade quality or replace the existing extraction stack with another library.
+Do not silently downgrade quality.
 
 ---
 
-# 8. Secrets and Sensitive Values
+# 9. METADATA FETCHING
 
-Detailed debugging is required, but never expose credentials/secrets merely because debug mode is enabled.
+Use the existing metadata-fetch dependency/library already used by the repository.
 
-Never log raw values for:
+For every metadata operation log:
+
+- source selected
+- request start/end
+- parser start/end
+- fields attempted
+- fields successfully extracted
+- missing fields
+- fallback source
+- final result
+- failure reason
+
+Do not replace the current dependency unless it is genuinely broken and replacement is necessary.
+
+---
+
+# 10. PLAYABLE URL / STREAM EXTRACTION
+
+Trace the complete chain:
+
+```text
+video/episode selected
+→ provider selected
+→ provider requested
+→ embed discovered
+→ extractor started
+→ formats/candidates discovered
+→ playable URLs extracted
+→ URLs validated
+→ quality candidates available
+→ selected URL
+→ player response
+```
+
+If extraction fails, logs must identify whether the failure happened during:
+
+- provider discovery
+- HTTP request
+- parser
+- embed discovery
+- extractor
+- URL parsing
+- URL validation
+- expiration
+- network access
+- player initialization
+- fallback
+
+Never expose authentication tokens or secret query parameters.
+
+---
+
+# 11. PLAYABLE QUALITY REQUIREMENT
+
+Preserve the current implementation's available quality extraction behavior.
+
+When the code already exposes multiple playable quality URLs, logging must show the real available candidates, including useful fields such as:
+
+- quality/resolution
+- format ID
+- codec
+- extension
+- bitrate
+- FPS
+- protocol
+- audio/video availability
+- URL status/validation result
+
+Do not invent quality levels that were not actually returned.
+
+Do not replace the existing extraction pipeline just for observability.
+
+---
+
+# 12. HTTP / NETWORK / RETRIES
+
+Every meaningful network operation should expose enough information to determine:
+
+- host
+- path/endpoint
+- start time
+- duration
+- status code
+- response size
+- timeout
+- retry number
+- retry reason
+- final failure
+
+For unexpected failures include exception type/message and traceback.
+
+Do not dump huge response bodies by default. If a body is essential for debugging, use bounded/truncated debug capture.
+
+---
+
+# 13. PLAYWRIGHT / BROWSER AUTOMATION
+
+If Playwright or another browser automation layer exists, trace the real browser flow:
+
+- browser launch
+- context creation
+- page creation
+- navigation start/end
+- relevant response status
+- relevant request
+- request failure
+- console errors/warnings
+- page errors
+- selector wait
+- selector success/failure
+- actual clicks/actions
+- timeout
+- extracted values
+- browser close
+
+Never fabricate browser events.
+
+---
+
+# 14. SHORTS BACKEND — COMPLETE TRACE
+
+The Shorts backend must remain fully observable.
+
+Trace:
+
+- feed request
+- cursor received
+- requested limit
+- DB query start/end
+- row count
+- ranking start/end
+- next cursor generation
+- feed exhaustion detection
+- replenishment trigger
+- discovery lock acquisition/rejection
+- discovery source selection
+- ytfetcher request/result
+- YouTube API fallback request/result
+- discovered count
+- duplicate count
+- inserted count
+- skipped count
+- cursor/backdating handling if used
+- page construction
+- response returned
+
+The logs must make it possible to diagnose why an apparently infinite Shorts feed stops.
+
+Do not remove or break existing Shorts prefetch, ranking, discovery, or playback behavior while adding observability.
+
+---
+
+# 15. ERROR HANDLING
+
+Every meaningful failure must retain:
+
+1. operation ID
+2. exact failing step
+3. exception type
+4. exception message
+5. traceback for unexpected exceptions
+6. relevant context
+7. retry/fallback information
+8. final outcome
+
+Never silently swallow exceptions.
+
+Never replace the original exception with only a generic client-facing message before recording the diagnostic event.
+
+The API response can remain clean while backend logs remain extremely detailed.
+
+---
+
+# 16. APP LOG INGESTION
+
+Inspect the existing app-log endpoint and client logging implementation.
+
+If the app currently sends logs through `/api/app-logs`:
+
+- preserve compatibility where practical
+- normalize incoming events into the common event schema
+- preserve their original timestamp when trustworthy
+- record server receipt time as well when useful
+- preserve source as `app`
+- attach operation/request/session/device correlation when available
+- retain full diagnostic details in debug mode
+
+Do not silently discard app events merely because they do not have an operation ID.
+
+---
+
+# 17. UNIFIED `/api/app-logs` / LOG RETRIEVAL CONTRACT
+
+The existing log retrieval mechanism should become the unified source for both server and app events.
+
+If `/api/app-logs` is currently the existing log endpoint, **extend it so it returns the merged stream rather than only client/app events**.
+
+If there is a better existing endpoint already used by the repository, adapt that endpoint instead, but avoid creating redundant parallel log systems.
+
+The unified response should support, where compatible with the current API:
+
+- chronological ordering
+- newest/oldest pagination or bounded history
+- source field
+- level
+- timestamp
+- operation/trace ID
+- message
+- detailed structured data
+- exception/traceback
+- request information
+- device/session information when available
+
+Maintain backward compatibility with existing consumers wherever reasonably possible.
+
+If changing the response shape is unavoidable, preserve old fields and add new fields rather than removing existing ones.
+
+---
+
+# 18. SERVER LOGS MUST NOT BE LOST
+
+Current server logs such as:
+
+```text
+GET /api/app-logs -> 200
+POST /shorts/.../react -> 200
+GET /youtube/validate-key -> 401
+GET /.well-known/... -> 404
+```
+
+are themselves useful diagnostic events.
+
+The unified system must capture real backend HTTP request/response events where the current server architecture can observe them.
+
+Expected harmless requests such as browser probes or favicon requests may still appear as real events. Do not hide them merely because they are noisy.
+
+The goal is accurate visibility.
+
+However, do not classify every 4xx/5xx as an application failure without considering the actual request context.
+
+---
+
+# 19. LIVE LOG AVAILABILITY
+
+The current app already polls the backend logs endpoint.
+
+Preserve compatibility with that mechanism if possible.
+
+New server and app logs must become visible through the **same unified retrieval path**.
+
+Do not require WebSockets/SSE just to complete this task.
+
+A future UI may add streaming later.
+
+---
+
+# 20. NO ARTIFICIAL CATEGORY WALLS
+
+Do not create a design where important events are hidden behind rigid categories such as `AnimeXIn`, `yt-dlp`, `network`, `app`, etc.
+
+Structured fields are welcome for filtering, but the primary view/data source must remain a complete chronological stream.
+
+A developer should be able to follow one operation from start to finish without manually jumping between unrelated log systems.
+
+---
+
+# 21. SECRETS / SENSITIVE DATA
+
+Debug mode does NOT mean secrets may be logged.
+
+Never log raw:
 
 - API keys
 - OAuth access/refresh tokens
@@ -291,362 +620,193 @@ Never log raw values for:
 - session secrets
 - database passwords
 - private credentials
+- authentication tokens embedded in URLs
 
-If the current operation requires these values, log that the value was present and redact/mask the actual secret.
+Log that the value existed when useful, but mask/redact the actual value.
 
-For URLs, preserve useful debugging information but redact embedded credentials/tokens where necessary.
-
-The goal is **maximum diagnostic detail without credential leakage**.
-
----
-
-# 9. HTTP / Network / Retry Visibility
-
-Whenever backend code performs network operations, expose enough detail to determine:
-
-- which host was contacted
-- which endpoint/path was requested
-- when the request started
-- how long it took
-- status code
-- response size
-- timeout
-- retry number
-- retry reason
-- final failure
-
-For failed requests, include the actual exception type/message and traceback when it is an unexpected backend exception.
-
-Do not log full response bodies by default when they may be huge. Where a response body is essential for debugging, use a bounded/truncated representation or explicit debug-only capture mechanism.
+Preserve non-sensitive URL information needed for debugging.
 
 ---
 
-# 10. Browser / Playwright Logging
+# 22. CONCURRENCY
 
-If Playwright or another browser automation layer exists, instrument the actual browser flow.
+Multiple requests/jobs may run concurrently.
 
-Capture applicable events such as:
+Logs must remain distinguishable using operation/trace IDs.
 
-- browser launch
-- context creation
-- page creation
-- navigation start/end
-- response status
-- relevant requests
-- relevant request failures
-- console errors/warnings
-- page errors
-- selector waits
-- selector success/failure
-- clicks/actions actually performed
-- timeout
-- extracted values
-- browser close
+Background tasks and async jobs must preserve their operation context.
 
-Do not fabricate browser events. Only record real events.
+Do not rely only on timestamps.
 
 ---
 
-# 11. Shorts Backend Logging
-
-The Shorts system must also be fully observable.
-
-Trace:
-
-- feed request
-- cursor received
-- requested limit
-- DB query start/end
-- number of rows returned
-- ranking start/end
-- next cursor generation
-- feed exhaustion detection
-- replenishment trigger
-- discovery job acquisition/rejection
-- Redis lock acquisition/release if present
-- discovery source selection
-- ytfetcher request/result
-- API fallback request/result
-- discovered item count
-- duplicate count
-- inserted count
-- skipped count
-- backdating/cursor handling if used
-- final page construction
-- response returned
-
-For Shorts discovery, expose enough information to diagnose why an apparently infinite feed stops.
-
-Do not remove existing feed/prefetch functionality while adding observability.
-
----
-
-# 12. Metadata Extraction
-
-For all metadata extraction paths, log:
-
-- source selected
-- request started/completed
-- metadata parser started/completed
-- fields attempted
-- fields successfully extracted
-- missing fields
-- fallback source
-- final metadata object/result
-- failure reason
-
-Preserve the current dependency/library used by the repository for metadata extraction.
-
-Do not replace it with a different dependency unless the existing implementation is genuinely broken and replacement is necessary.
-
----
-
-# 13. Playback / Playable URL Extraction
-
-Trace the complete chain from episode/video selection to final playable URL.
-
-For example:
-
-```text
-Episode selected
-→ provider selected
-→ provider request
-→ embed discovered
-→ stream extraction
-→ formats discovered
-→ quality candidates
-→ playable URL candidates
-→ validation
-→ selected URL
-→ player response
-```
-
-If the playable URL fails, the logs must show whether the failure happened during:
-
-- provider discovery
-- extraction
-- URL parsing
-- URL validation
-- expiration
-- network access
-- player initialization
-- fallback
-
-Do not expose authentication tokens or secret query parameters.
-
----
-
-# 14. Existing `/api/app-logs` Infrastructure
-
-Inspect the current app-log implementation first.
-
-If `/api/app-logs`, `/api/app-logs/devices`, `/app_logs`, or equivalent functionality already exists, **extend and improve it instead of creating an unrelated parallel logging system**, unless the existing design fundamentally prevents proper tracing.
-
-Ensure the backend can provide:
-
-- chronological logs
-- operation/trace correlation
-- complete message/details
-- timestamps
-- errors and tracebacks
-- live/recent logs
-- enough data for future frontend expansion
-
-Maintain backward compatibility with existing consumers where practical.
-
----
-
-# 15. Live Log Availability
-
-The current app already polls the backend logs endpoint.
-
-Preserve compatibility with that mechanism if possible.
-
-New backend logs should become available to the existing log retrieval API without requiring frontend changes in this task.
-
-If the current implementation is polling every few seconds, do not introduce a requirement for WebSockets/SSE just to complete this task. A future frontend can adopt streaming later if useful.
-
----
-
-# 16. Error Handling
-
-Every meaningful failure must have:
-
-1. the operation ID
-2. the exact step where it failed
-3. the exception type
-4. the exception message
-5. traceback for unexpected exceptions
-6. relevant context
-7. retry/fallback information
-8. final outcome
-
-Do not swallow exceptions silently.
-
-Do not convert every exception into a generic message before logging the original exception.
-
-The client-facing error can remain clean; the backend diagnostic trace must remain detailed.
-
----
-
-# 17. Performance Requirements
+# 23. PERFORMANCE / STORAGE
 
 Detailed logging must not make the application unusably slow.
 
-Use efficient logging and avoid expensive serialization/copying unless needed.
+Use efficient event construction and avoid expensive serialization where unnecessary.
 
-Do not synchronously perform expensive database operations for every tiny log event if the existing architecture allows a better approach.
+Respect the existing storage/deployment constraints.
 
-However, **do not sacrifice the A→Z trace requirement merely to optimize prematurely**.
+Keep enough recent history for debugging according to the repository's existing model.
 
-Keep enough recent history for debugging while respecting the repository's current storage model and deployment constraints.
+Do not prematurely sacrifice diagnostic detail merely for optimization.
 
----
-
-# 18. Concurrency
-
-The backend can handle multiple users/jobs simultaneously.
-
-Logs from concurrent operations must remain distinguishable.
-
-Never rely solely on timestamps to correlate logs.
-
-Use operation/trace IDs.
-
-Ensure background jobs and async tasks retain their operation context.
+If a bounded retention limit exists, make it explicit and observable.
 
 ---
 
-# 19. Do NOT Modify the Frontend in This Task
+# 24. FRONTEND SCOPE
 
-This task is intentionally backend-first.
+This task is **backend-first**.
 
-Do NOT redesign the current frontend Logs page.
+Do not redesign the Shorts page, player UI, or other frontend screens.
 
-Do NOT add new frontend log UI unless a tiny backend-contract compatibility change is absolutely unavoidable.
+Do not add a completely new frontend logging page as part of this task.
 
-The future frontend should be able to consume the backend logs and show expandable details, but that UI work will happen later.
+The important frontend-related requirement is that the existing/future Logs page can consume **one backend stream containing both server and app logs**.
+
+If a tiny frontend compatibility change is absolutely required because the current client assumes an old response shape, keep it minimal and explain it.
+
+Otherwise leave frontend UI work for a separate task.
 
 ---
 
-# 20. Testing Requirements
+# 25. TESTING — ACTUALLY VERIFY IT
 
-After implementation, actually test the logging system.
+After implementation, run the relevant tests/commands available in the repository.
 
-At minimum test:
+At minimum verify:
+
+### Unified server + app logs
+
+Generate a backend request and an app log for the same/general operation and verify they appear in the same retrieval stream with source information and correct chronological ordering.
 
 ### Successful AnimeXIn flow
 
-Verify that the complete successful trace is visible.
+Verify the complete real trace is visible.
 
-### AnimeXIn failure
+### AnimeXIn/provider failure
 
-Force or reproduce a provider failure and verify the exact failing stage is logged.
+Reproduce or simulate a real failure and verify the exact failing stage, exception, and context are logged.
 
 ### yt-dlp success
 
-Verify extractor/format/playable URL information is logged.
+Verify extractor, formats, quality candidates, playable URL information, and final result are visible.
 
 ### yt-dlp failure
 
-Verify stderr, exit code, exception, retry information, and traceback are available.
+Verify stderr, exit code, exception, retries, and traceback are visible.
 
 ### Metadata failure
 
-Verify the exact extraction stage is visible.
+Verify the exact metadata extraction stage is visible.
 
 ### Playback URL failure
 
-Verify the complete provider → extraction → validation chain is visible.
+Verify provider → extraction → validation → fallback is traceable.
 
 ### Shorts feed/discovery
 
-Verify feed exhaustion/replenishment/discovery events can be followed through a single operation trace.
+Verify feed exhaustion, discovery trigger, ytfetcher result, fallback result, insertion, and next-page behavior can be followed by operation ID.
 
 ### Concurrent operations
 
-Trigger multiple operations and verify their logs can be separated by operation ID.
+Trigger multiple operations and verify their traces can be separated.
+
+### Existing API compatibility
+
+Verify existing `/api/app-logs` consumers still work where practical.
+
+Do not claim tests passed if they were not actually run.
+
+If an external provider cannot be reached from the environment, clearly report that and test all locally testable pieces.
 
 ---
 
-# 21. Do Not Fake a Successful Test
+# 26. DO NOT PATCH RANDOMLY
 
-Do not merely inspect the code and claim success.
+This is not an invitation to add a few `print()` statements around the currently failing code.
 
-Run the relevant tests/commands available in the repository.
+Build a coherent observability architecture that works across the entire backend.
 
-If an external provider cannot be reached from the current environment, clearly state that in the final implementation summary and test everything that can be tested locally.
+Do not duplicate logging systems.
+
+Do not create a second server-log database if the existing one can be extended correctly.
+
+Do not create separate app/server pages or separate retrieval contracts when they can be unified.
+
+Do not rewrite unrelated application functionality.
 
 ---
 
-# 22. Preserve Existing Application Behavior
+# 27. PRESERVE EXISTING APPLICATION BEHAVIOR
 
-This is an observability/debugging task.
+This task is primarily observability.
 
 Do NOT intentionally change:
 
-- existing API contracts
+- API behavior
 - provider priority
 - metadata semantics
 - playable URL semantics
 - Shorts ranking behavior
+- Shorts discovery behavior
 - Shorts prefetch behavior
-- existing quality selection behavior
+- quality selection behavior
 - existing dependency choices
 
-unless a change is strictly required to make logging correct.
+unless a change is strictly required for correct logging/correlation.
 
-If you discover an unrelated bug while implementing this, log/document it rather than silently redesigning unrelated functionality.
+If you discover an unrelated bug, document it rather than silently changing unrelated behavior.
 
 ---
 
-# 23. Quality Bar
+# 28. ACCEPTANCE CRITERION
 
-The implementation should make this possible:
+The implementation is successful only if this becomes possible:
 
-> A user reports "Episode playback failed."
+> A user reports: `AnimeXIn playback failed.`
 >
-> A developer opens backend logs, finds the operation ID, expands/follows the trace, and can determine exactly which request/parser/provider/extractor/validation step failed without reproducing the issue blindly.
+> A developer opens the existing Logs system, sees one chronological stream containing both server and app events, finds the relevant operation ID, follows the A→Z trace, expands the detailed event data, and determines the exact request/parser/provider/extractor/validation step that failed — including the real exception/traceback and retry/fallback path where available.
 
-That is the acceptance criterion.
+The same standard must apply to `yt-dlp`, metadata extraction, playback URL refresh, Shorts discovery, and other important backend operations.
 
 ---
 
-# 24. Final Verification Checklist
+# 29. FINAL VERIFICATION CHECKLIST
 
-Before finishing, verify:
+Before finishing, verify all applicable items:
 
-- [ ] Repository architecture was inspected before implementation.
-- [ ] Existing logging infrastructure was understood and reused where appropriate.
-- [ ] Backend operations have correlation/operation IDs.
-- [ ] AnimeXIn scraping has A→Z execution tracing.
-- [ ] Provider resolution has A→Z execution tracing.
-- [ ] Playable URL extraction has A→Z execution tracing.
-- [ ] `yt-dlp` execution is deeply logged.
+- [ ] Entire repository was inspected before implementation.
+- [ ] Existing logging architecture was understood.
+- [ ] Existing app-log infrastructure was reused/extended where appropriate.
+- [ ] Server logs and app logs are represented by one common event model.
+- [ ] Server logs and app logs are exposed through one unified chronological stream.
+- [ ] Each event retains its real source/origin.
+- [ ] Operation/trace IDs exist for meaningful backend operations.
+- [ ] App events are correlated with backend operations where possible.
+- [ ] AnimeXIn has A→Z execution tracing.
+- [ ] Provider resolution has A→Z tracing.
+- [ ] Playable URL extraction has A→Z tracing.
 - [ ] Existing `yt-dlp` dependency/version is preserved.
-- [ ] Existing metadata-fetch dependency is preserved.
-- [ ] Available quality/playable URL extraction behavior is preserved.
-- [ ] Network requests/retries/timeouts are visible.
-- [ ] Browser automation is visible where applicable.
-- [ ] Shorts feed/discovery operations are traceable.
+- [ ] Existing `yt-dlp` extraction mechanism is preserved.
+- [ ] All available quality/playable URL results are preserved and observable.
+- [ ] Metadata dependency/behavior is preserved.
+- [ ] Network requests, retries, and timeouts are visible.
+- [ ] Playwright/browser activity is visible where applicable.
+- [ ] Shorts feed/discovery/replenishment is traceable.
 - [ ] Exceptions retain type/message/traceback.
+- [ ] Server HTTP events are captured where appropriate.
 - [ ] Secrets are redacted.
-- [ ] Existing `/api/app-logs` compatibility is preserved where possible.
-- [ ] No frontend redesign was performed.
-- [ ] Relevant tests were actually executed.
-- [ ] No fake/synthetic success logs were added.
-- [ ] The final response clearly lists changed files, tests run, and any limitations.
+- [ ] No artificial category wall hides chronological events.
+- [ ] Existing `/api/app-logs` compatibility is preserved where practical.
+- [ ] Live polling/retrieval remains functional.
+- [ ] No unnecessary frontend redesign was performed.
+- [ ] Unified server + app log retrieval was actually tested.
+- [ ] Relevant backend tests/commands were actually executed.
+- [ ] No fake successful test results were reported.
 
----
+## Final instruction to OpenCode
 
-# Final Instruction to OpenCode
-
-**Do the implementation yourself.**
-
-Do not stop at analysis, do not return only a proposed architecture, and do not ask me to manually implement individual pieces.
-
-Inspect the current codebase, determine the best backend architecture for this repository, implement the complete observability system, integrate it with the existing backend log APIs, run the available tests, and leave the repository in a working state.
-
-The primary goal is simple:
-
-**When anything fails in the backend, we must be able to see exactly what happened, step by step, from start to finish.**
+**Do not stop at analysis. Inspect the repository, implement the complete backend observability redesign, integrate server + app logs into one unified chronological stream, test it, and leave the repository in a working state.**
