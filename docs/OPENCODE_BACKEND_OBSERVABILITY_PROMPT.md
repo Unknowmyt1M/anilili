@@ -2,7 +2,7 @@
 
 ## Mission
 
-Work directly on the current `anilili` repository and implement a **production-quality backend execution-trace/logging system** for the current debug/development build.
+Work directly on the current `workspace` repository and implement a **production-quality backend execution-trace/logging system** for the current debug/development build.
 
 This is an implementation task, not a request for a plan. **Inspect the entire repository first, understand the current architecture and existing logging/API/storage implementation, then implement the solution in the architecture that best fits the codebase. Do not blindly follow a predefined implementation.**
 
